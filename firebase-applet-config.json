@@ -1,12 +1,12 @@
 {
-  "projectId": "rapid-isomer-tc70r",
-  "appId": "1:783897760842:web:e47818e89ba273fe0d42b3",
-  "apiKey": "AIzaSyC91ssZOsdOtHPXwY_RX9nj5qMUJS3-q2Y",
-  "authDomain": "rapid-isomer-tc70r.firebaseapp.com",
+  "projectId": "gen-lang-client-0307584193",
+  "appId": "1:561357693812:web:f282428e98669284a74221",
+  "apiKey": "AIzaSyCv2stF_TEifnPxqr0VxzGjScE8BKie-XY",
+  "authDomain": "gen-lang-client-0307584193.firebaseapp.com",
   "firestoreDatabaseId": "ai-studio-syncplan-bd8d02f7-f211-4979-be42-7444bf605dc5",
-  "storageBucket": "rapid-isomer-tc70r.firebasestorage.app",
-  "messagingSenderId": "783897760842",
+  "storageBucket": "gen-lang-client-0307584193.firebasestorage.app",
+  "messagingSenderId": "561357693812",
   "measurementId": "",
-  "oAuthClientId": "783897760842-gmpv6rp5dghdc3urcifg5eugiamjsdip.apps.googleusercontent.com",
+  "oAuthClientId": "561357693812-cu6fikmbv1rdv44pv37q9fft5cbm6j0i.apps.googleusercontent.com",
   "recaptchaSiteKey": ""
 }

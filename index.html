@@ -6,84 +6,40 @@
     <title>Calen - Notion-Inspired Unified Calendar & Task Hub</title>
     <meta
       name="description"
-      content="Minimalist, distraction-free calendar and master task list with live sync for Google Classroom, Notion, Trello, and Moodle."
+      content="Minimalist, distraction-free calendar and master task list with live sync for Google Calendar, Google Classroom, Notion, Trello, and Moodle."
     />
     <meta property="og:title" content="Calen - Notion-Inspired Unified Calendar & Task Hub" />
     <meta
       property="og:description"
-      content="Minimalist, distraction-free calendar and master task list with live sync for Google Classroom, Notion, Trello, and Moodle."
+      content="Minimalist, distraction-free calendar and master task list with live sync for Google Calendar, Google Classroom, Notion, Trello, and Moodle."
     />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
-    <!-- TOP HEADER -->
+    <!-- TOP HEADER (ULTRA-CLEAN: BRAND + VIEW TABS ON LEFT, SETTINGS + NEW TASK ON RIGHT) -->
     <header class="top-header">
       <div class="header-inner">
         <div class="header-left">
           <div class="brand">
-            <div class="brand-logo" aria-hidden="true">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-                <line x1="16" y1="2" x2="16" y2="6"></line>
-                <line x1="8" y1="2" x2="8" y2="6"></line>
-                <line x1="3" y1="10" x2="21" y2="10"></line>
-              </svg>
-            </div>
             <span class="brand-name">calen</span>
-            <span class="brand-tag">student-hub</span>
+            <span class="brand-sep" aria-hidden="true">·</span>
+            <span class="brand-tag">academic planner</span>
           </div>
 
           <nav class="view-switcher" aria-label="Primary Views">
             <button type="button" id="tab-tasks" class="nav-tab active">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M9 11l3 3L22 4"></path>
-                <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
-              </svg>
               <span>Master Task List</span>
             </button>
             <button type="button" id="tab-calendar" class="nav-tab">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-                <line x1="16" y1="2" x2="16" y2="6"></line>
-                <line x1="8" y1="2" x2="8" y2="6"></line>
-                <line x1="3" y1="10" x2="21" y2="10"></line>
-              </svg>
               <span>Calendar View</span>
             </button>
           </nav>
         </div>
 
         <div class="header-right">
-          <button type="button" id="btn-cloud-auth" class="hdr-btn" title="Sync across devices with Firebase">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"></path>
-            </svg>
-            <span id="cloud-auth-label">Sign in to Cloud</span>
-          </button>
-
-          <button type="button" id="btn-moodle-modal" class="hdr-btn pastel-peach" title="Configure Moodle LMS Courses & API">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path>
-              <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
-            </svg>
-            <span id="moodle-btn-label">Moodle (3)</span>
-          </button>
-
-          <button type="button" id="btn-classroom-toggle" class="hdr-btn pastel-sage" title="Toggle Google Classroom Sync">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M22 10v6M2 10l10-5 10 5-10 5z"></path>
-              <path d="M6 12v5c3 3 9 3 12 0v-5"></path>
-            </svg>
-            <span>Classroom</span>
-          </button>
-
-          <button type="button" id="btn-theme-quick" class="hdr-btn hdr-btn-icon" title="Toggle Light / Dark Mode">
-            <span id="theme-quick-icon"></span>
-          </button>
-
-          <button type="button" id="btn-settings-modal" class="hdr-btn hdr-btn-icon" title="Settings & Appearance">
+          <button type="button" id="btn-settings-modal" class="hdr-btn" title="Settings, Appearance, Cloud & Platform Sync">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <line x1="4" y1="21" x2="4" y2="14"></line>
               <line x1="4" y1="10" x2="4" y2="3"></line>
@@ -95,22 +51,11 @@
               <line x1="9" y1="8" x2="15" y2="8"></line>
               <line x1="17" y1="16" x2="23" y2="16"></line>
             </svg>
-          </button>
-
-          <button type="button" id="btn-sync-modal" class="hdr-btn pastel-lavender" title="Multi-Device Sync & Export">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect>
-              <line x1="12" y1="18" x2="12.01" y2="18"></line>
-            </svg>
-            <span>Sync Devices</span>
+            <span>Settings</span>
           </button>
 
           <button type="button" id="btn-new-task" class="btn-primary">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="12" y1="5" x2="12" y2="19"></line>
-              <line x1="5" y1="12" x2="19" y2="12"></line>
-            </svg>
-            <span>New Task</span>
+            <span>+ New Task</span>
           </button>
         </div>
       </div>
@@ -120,16 +65,11 @@
     <div id="reminder-banner" class="reminder-banner hidden">
       <div class="reminder-inner">
         <div class="reminder-left">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="10"></circle>
-            <line x1="12" y1="8" x2="12" y2="12"></line>
-            <line x1="12" y1="16" x2="12.01" y2="16"></line>
-          </svg>
           <span id="reminder-banner-text" class="reminder-text"></span>
         </div>
         <div class="reminder-right">
-          <button type="button" id="btn-open-reminder-task" class="hdr-btn" style="height:26px;padding:0 9px;font-size:11.5px;">
-            View Assignment
+          <button type="button" id="btn-open-reminder-task" class="hdr-btn" style="height:28px;padding:0 10px;font-size:12px;">
+            Open Assignment
           </button>
           <button type="button" id="btn-dismiss-reminder" aria-label="Dismiss reminder" style="padding:4px;">
             ✕
@@ -146,10 +86,11 @@
           <div>
             <div class="page-title-row">
               <h1 class="page-title">Master Task List</h1>
-              <span id="task-total-chip" class="count-chip">0 total</span>
+              <span aria-hidden="true" class="count-meta">·</span>
+              <span id="task-total-chip" class="count-meta">0 assignments</span>
             </div>
             <p class="page-subtitle">
-              Unified student assignments &amp; deadlines with soft pastel priority badges
+              Unified student assignments &amp; deadlines synced across Moodle, Google Calendar, Classroom, Notion, and Trello
             </p>
           </div>
 
@@ -182,6 +123,7 @@
           <select id="filter-source" class="select-field" aria-label="Filter by Platform">
             <option value="all">All Sources</option>
             <option value="moodle">Moodle LMS</option>
+            <option value="google_calendar">Google Calendar</option>
             <option value="google_classroom">Google Classroom</option>
             <option value="notion">Notion</option>
             <option value="trello">Trello</option>
@@ -204,32 +146,29 @@
 
         <!-- INLINE QUICK ADD -->
         <form id="quick-add-form" class="quick-add-bar">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-muted);margin-left:4px;">
-            <line x1="12" y1="5" x2="12" y2="19"></line>
-            <line x1="5" y1="12" x2="19" y2="12"></line>
-          </svg>
           <input
             type="text"
             id="quick-add-title"
             class="quick-add-input"
-            placeholder="Quick add an assignment or task and press Enter..."
+            placeholder="+ Quick add an assignment or deadline and press Enter..."
           />
           <div class="quick-add-controls">
-            <select id="quick-add-priority" class="select-field" style="height:32px;font-size:12.5px;">
+            <select id="quick-add-priority" class="select-field">
               <option value="urgent">Urgent Priority</option>
               <option value="high">High Priority</option>
               <option value="medium" selected>Medium Priority</option>
               <option value="low">Low Priority</option>
             </select>
-            <select id="quick-add-source" class="select-field" style="height:32px;font-size:12.5px;">
+            <select id="quick-add-source" class="select-field">
               <option value="personal">Personal</option>
+              <option value="google_calendar">Google Calendar</option>
               <option value="moodle">Moodle</option>
               <option value="google_classroom">Classroom</option>
               <option value="notion">Notion</option>
               <option value="trello">Trello</option>
             </select>
-            <button type="submit" class="btn-primary" style="height:32px;padding:0 12px;font-size:12.5px;">
-              Add
+            <button type="submit" class="btn-primary">
+              Add Task
             </button>
           </div>
         </form>
@@ -244,20 +183,20 @@
           <div>
             <div class="page-title-row">
               <h1 id="cal-title" class="page-title">October 2026</h1>
-              <button type="button" id="cal-today-btn" class="hdr-btn" style="height:28px;font-size:12px;">
+              <button type="button" id="cal-today-btn" class="hdr-btn" style="height:32px;font-size:12.5px;">
                 Today
               </button>
               <div style="display:inline-flex;gap:4px;">
-                <button type="button" id="cal-prev-btn" class="hdr-btn hdr-btn-icon" style="width:28px;height:28px;" aria-label="Previous">
+                <button type="button" id="cal-prev-btn" class="hdr-btn hdr-btn-icon" style="width:32px;height:32px;" aria-label="Previous">
                   ‹
                 </button>
-                <button type="button" id="cal-next-btn" class="hdr-btn hdr-btn-icon" style="width:28px;height:28px;" aria-label="Next">
+                <button type="button" id="cal-next-btn" class="hdr-btn hdr-btn-icon" style="width:32px;height:32px;" aria-label="Next">
                   ›
                 </button>
               </div>
             </div>
             <p class="page-subtitle">
-              Click any date cell to schedule a task, or click an assignment chip to inspect details
+              Click any date cell to schedule a task, or click an assignment to inspect details
             </p>
           </div>
 
@@ -286,8 +225,8 @@
     <div id="modal-task" class="modal-overlay hidden" role="dialog" aria-modal="true">
       <div class="modal-box">
         <div class="modal-hdr">
-          <h2 id="modal-task-heading" style="font-size:16px;font-weight:600;">Assignment Details</h2>
-          <button type="button" id="close-task-modal" class="hdr-btn hdr-btn-icon" style="width:28px;height:28px;">✕</button>
+          <h2 id="modal-task-heading" style="font-size:18px;">Assignment Details</h2>
+          <button type="button" id="close-task-modal" class="hdr-btn hdr-btn-icon" style="width:32px;height:32px;">✕</button>
         </div>
         <form id="form-task" class="modal-body">
           <input type="hidden" id="task-id" />
@@ -318,6 +257,7 @@
               <label class="form-label" for="task-source">Platform Source</label>
               <select id="task-source" class="select-field">
                 <option value="moodle">Moodle LMS</option>
+                <option value="google_calendar">Google Calendar</option>
                 <option value="google_classroom">Google Classroom</option>
                 <option value="notion">Notion</option>
                 <option value="trello">Trello</option>
@@ -340,22 +280,27 @@
 
           <div class="form-group">
             <label class="form-label" for="task-desc">Notes &amp; Instructions</label>
-            <textarea id="task-desc" class="input-field" style="height:76px;padding:8px 12px;resize:vertical;" placeholder="Add lecture links, rubric notes, or submission details..."></textarea>
+            <textarea id="task-desc" class="input-field" style="height:80px;padding:8px 12px;resize:vertical;" placeholder="Add lecture links, rubric notes, or submission details..."></textarea>
           </div>
 
           <div class="form-group">
             <label class="form-label">Checklist Subtasks</label>
-            <div id="task-subtasks-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:6px;"></div>
+            <div id="task-subtasks-list" style="display:flex;flex-direction:column;margin-bottom:8px;"></div>
             <div style="display:flex;gap:8px;">
               <input type="text" id="new-subtask-input" class="input-field" style="flex:1;" placeholder="Add a checklist step..." />
               <button type="button" id="btn-add-subtask" class="hdr-btn">Add Step</button>
             </div>
           </div>
 
-          <div class="modal-foot" style="margin:4px -20px -20px;">
-            <button type="button" id="btn-delete-task" class="hdr-btn" style="color:var(--rose-text);border-color:var(--rose-border);background:var(--rose-bg);">
-              Delete
-            </button>
+          <div class="modal-foot" style="margin:4px -24px -24px;">
+            <div style="display:flex;gap:8px;align-items:center;">
+              <button type="button" id="btn-delete-task" class="hdr-btn" style="color:var(--rose-text);border-color:var(--rose-border);background:var(--rose-bg);">
+                Delete
+              </button>
+              <button type="button" id="btn-push-single-gcal" class="hdr-btn pastel-sky" title="Create or update this deadline on your Google Calendar">
+                Sync to Google Calendar
+              </button>
+            </div>
             <div style="display:flex;gap:8px;margin-left:auto;">
               <button type="button" id="btn-cancel-task" class="hdr-btn">Cancel</button>
               <button type="submit" class="btn-primary">Save Assignment</button>
@@ -365,15 +310,138 @@
       </div>
     </div>
 
-    <!-- MODAL 2: MOODLE LMS INTEGRATION -->
-    <div id="modal-moodle" class="modal-overlay hidden" role="dialog" aria-modal="true">
+    <!-- MODAL 2: UNIFIED SETTINGS, APPEARANCE, INTEGRATIONS & CLOUD SYNC -->
+    <div id="modal-settings" class="modal-overlay hidden" role="dialog" aria-modal="true">
+      <div class="modal-box" style="max-width:640px;">
+        <div class="modal-hdr">
+          <div>
+            <h2 style="font-size:18px;">Settings &amp; Connected Services</h2>
+            <p style="font-size:13px;color:var(--text-secondary);">Manage appearance, Google Cloud sync, Moodle courses, and platform integrations</p>
+          </div>
+          <button type="button" id="close-settings-modal" class="hdr-btn hdr-btn-icon" style="width:32px;height:32px;">✕</button>
+        </div>
+
+        <div class="modal-body">
+          <!-- 1. GOOGLE ACCOUNT & CLOUD FIRESTORE SYNC -->
+          <div class="form-group" style="padding-bottom:16px;border-bottom:1px solid var(--border-color);">
+            <label class="form-label">Account &amp; Cloud Sync</label>
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-top:4px;">
+              <div>
+                <div id="sync-cloud-title" style="font-weight:600;font-size:14px;">Firebase Cloud &amp; Google Account</div>
+                <div id="sync-cloud-subtitle" style="font-size:12.5px;color:var(--text-secondary);">Sign in with Google to sync tasks across devices and connect Google Calendar</div>
+              </div>
+              <button type="button" id="btn-modal-cloud-login" class="gsi-material-button">
+                <div class="gsi-material-button-state"></div>
+                <div class="gsi-material-button-content-wrapper">
+                  <div class="gsi-material-button-icon">
+                    <svg version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" style="display: block;">
+                      <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"></path>
+                      <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"></path>
+                      <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"></path>
+                      <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"></path>
+                      <path fill="none" d="M0 0h48v48H0z"></path>
+                    </svg>
+                  </div>
+                  <span id="modal-cloud-login-text" class="gsi-material-button-contents">Sign in with Google</span>
+                </div>
+              </button>
+            </div>
+          </div>
+
+          <!-- 2. APPEARANCE (LIGHT / DARK / SYSTEM) -->
+          <div class="form-group" style="padding-bottom:16px;border-bottom:1px solid var(--border-color);">
+            <div style="display:flex;align-items:center;justify-content:space-between;">
+              <label class="form-label">Appearance &amp; Theme</label>
+              <button type="button" id="btn-theme-quick" class="hdr-btn" style="height:28px;padding:0 10px;font-size:12px;">
+                <span id="theme-quick-icon" style="display:inline-flex;align-items:center;"></span>
+                <span>Toggle Light / Dark</span>
+              </button>
+            </div>
+            <div class="theme-cards" style="margin-top:6px;">
+              <button type="button" data-theme-choice="light" class="theme-card">
+                <strong style="font-size:13.5px;">Light Mode</strong>
+                <span style="font-size:12px;color:var(--text-secondary);">Warm alabaster &amp; soft pastels</span>
+              </button>
+              <button type="button" data-theme-choice="dark" class="theme-card">
+                <strong style="font-size:13.5px;">Dark Mode</strong>
+                <span style="font-size:12px;color:var(--text-secondary);">Warm charcoal &amp; muted pastels</span>
+              </button>
+              <button type="button" data-theme-choice="system" class="theme-card">
+                <strong style="font-size:13.5px;">System Auto</strong>
+                <span style="font-size:12px;color:var(--text-secondary);">Match device appearance</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- 3. PLATFORM INTEGRATIONS & COURSE SYNC (GOOGLE CALENDAR, MOODLE, CLASSROOM, NOTION, TRELLO) -->
+          <div class="form-group" style="padding-bottom:16px;border-bottom:1px solid var(--border-color);">
+            <label class="form-label" style="padding-bottom:8px;border-bottom:1px solid var(--border-strong);">Connected Services &amp; Platforms</label>
+
+            <!-- Google Calendar Row -->
+            <div class="course-item">
+              <div>
+                <div style="font-size:13.5px;font-weight:600;">Google Calendar</div>
+                <div style="font-size:12px;color:var(--text-secondary);">Two-way sync for events and assignment deadlines</div>
+              </div>
+              <div style="display:flex;align-items:center;gap:10px;">
+                <button type="button" id="btn-gcal-modal" class="hdr-btn pastel-sky" style="height:30px;padding:0 10px;font-size:12px;">
+                  <span id="gcal-btn-label">Sync Calendar</span>
+                </button>
+                <input type="checkbox" id="toggle-plat-gcal" aria-label="Show Google Calendar tasks" />
+              </div>
+            </div>
+
+            <!-- Moodle LMS Row -->
+            <div class="course-item">
+              <div>
+                <div style="font-size:13.5px;font-weight:600;">Moodle LMS</div>
+                <div style="font-size:12px;color:var(--text-secondary);">Sync courses, modules, and iCal feeds</div>
+              </div>
+              <div style="display:flex;align-items:center;gap:10px;">
+                <button type="button" id="btn-moodle-modal" class="hdr-btn pastel-peach" style="height:30px;padding:0 10px;font-size:12px;">
+                  <span id="moodle-btn-label">Moodle (3)</span>
+                </button>
+                <input type="checkbox" id="toggle-plat-moodle" aria-label="Show Moodle tasks" />
+              </div>
+            </div>
+
+            <!-- Google Classroom, Notion, Trello Rows -->
+            <div id="settings-integrations-list" style="display:flex;flex-direction:column;"></div>
+          </div>
+
+          <!-- 4. MULTI-DEVICE SYNC LINK & WORKSPACE MAINTENANCE -->
+          <div class="form-group">
+            <label class="form-label" for="sync-share-url">Sync Devices · Instant Transfer Link</label>
+            <div style="display:flex;gap:8px;margin-top:4px;">
+              <input type="text" id="sync-share-url" class="input-field mono" style="flex:1;font-size:12px;" readonly />
+              <button type="button" id="btn-copy-sync-url" class="hdr-btn">Copy Link</button>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:16px;padding-top:16px;border-top:1px solid var(--border-color);">
+              <div>
+                <div style="font-weight:600;font-size:13.5px;">Restore Default Sample Schedule</div>
+                <div style="font-size:12px;color:var(--text-secondary);">Reset tasks to the curated student schedule</div>
+              </div>
+              <button type="button" id="btn-reset-demo" class="hdr-btn">Reset Demo Data</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-foot">
+          <span style="font-size:12px;color:var(--text-muted);">Preferences sync automatically across devices when signed in</span>
+          <button type="button" id="done-settings-modal" class="btn-primary">Done</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL 3: MOODLE LMS INTEGRATION -->
+    <div id="modal-moodle" class="modal-overlay hidden" role="dialog" aria-modal="true" style="z-index:70;">
       <div class="modal-box">
         <div class="modal-hdr">
           <div>
-            <h2 style="font-size:16px;font-weight:600;">Moodle App API &amp; Course Sync</h2>
-            <p style="font-size:12px;color:var(--text-secondary);">Authenticate your Moodle LMS account and choose courses to sync deadlines</p>
+            <h2 style="font-size:18px;">Moodle App API &amp; Course Sync</h2>
+            <p style="font-size:13px;color:var(--text-secondary);">Authenticate your Moodle LMS account and choose courses to sync deadlines</p>
           </div>
-          <button type="button" id="close-moodle-modal" class="hdr-btn hdr-btn-icon" style="width:28px;height:28px;">✕</button>
+          <button type="button" id="close-moodle-modal" class="hdr-btn hdr-btn-icon" style="width:32px;height:32px;">✕</button>
         </div>
         <div class="modal-body">
           <div class="form-grid">
@@ -388,17 +456,17 @@
           </div>
 
           <div class="form-group">
-            <div style="display:flex;align-items:center;justify-content:space-between;">
-              <label class="form-label">Enrolled Moodle Courses (Select to Sync)</label>
-              <span id="moodle-sync-status" style="font-size:11.5px;color:var(--peach-text);font-weight:500;">Connected via Moodle REST API</span>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding-bottom:8px;border-bottom:1px solid var(--border-strong);">
+              <label class="form-label">Enrolled Moodle Courses</label>
+              <span id="moodle-sync-status" style="font-size:12px;color:var(--peach-text);font-weight:500;">Connected via Moodle REST API</span>
             </div>
-            <div id="moodle-courses-list" style="display:flex;flex-direction:column;gap:8px;margin-top:4px;"></div>
+            <div id="moodle-courses-list" style="display:flex;flex-direction:column;"></div>
           </div>
 
           <div class="form-group">
-            <label class="form-label" for="moodle-ical-input">Or Paste Moodle Calendar iCal (.ics) Feed</label>
-            <textarea id="moodle-ical-input" class="input-field mono" style="height:68px;padding:8px 10px;font-size:11.5px;" placeholder="BEGIN:VCALENDAR... (Paste VEVENT blocks to import deadlines)"></textarea>
-            <div style="display:flex;justify-content:flex-end;margin-top:6px;">
+            <label class="form-label" for="moodle-ical-input">Import Moodle Calendar iCal (.ics) Feed</label>
+            <textarea id="moodle-ical-input" class="input-field mono" style="height:72px;padding:8px 12px;font-size:12px;" placeholder="BEGIN:VCALENDAR... (Paste VEVENT blocks to import deadlines)"></textarea>
+            <div style="display:flex;justify-content:flex-end;margin-top:8px;">
               <button type="button" id="btn-parse-ical" class="hdr-btn">Import iCal Events</button>
             </div>
           </div>
@@ -410,88 +478,91 @@
       </div>
     </div>
 
-    <!-- MODAL 3: SETTINGS & APPEARANCE (LIGHT / DARK MODE) -->
-    <div id="modal-settings" class="modal-overlay hidden" role="dialog" aria-modal="true">
+    <!-- MODAL 4: GOOGLE CALENDAR SYNC HUB -->
+    <div id="modal-gcal" class="modal-overlay hidden" role="dialog" aria-modal="true" style="z-index:70;">
       <div class="modal-box">
         <div class="modal-hdr">
           <div>
-            <h2 style="font-size:16px;font-weight:600;">Workspace Settings &amp; Appearance</h2>
-            <p style="font-size:12px;color:var(--text-secondary);">Customize Light Mode, Dark Mode, and connected student platforms</p>
+            <h2 style="font-size:18px;">Google Calendar Two-Way Sync</h2>
+            <p style="font-size:13px;color:var(--text-secondary);">Import upcoming Google Calendar events and export Calen deadlines</p>
           </div>
-          <button type="button" id="close-settings-modal" class="hdr-btn hdr-btn-icon" style="width:28px;height:28px;">✕</button>
+          <button type="button" id="close-gcal-modal" class="hdr-btn hdr-btn-icon" style="width:32px;height:32px;">✕</button>
         </div>
         <div class="modal-body">
-          <div class="form-group">
-            <label class="form-label">Color Theme</label>
-            <div class="theme-cards">
-              <button type="button" data-theme-choice="light" class="theme-card">
-                <strong style="font-size:13px;">☀️ Light Mode</strong>
-                <span style="font-size:11.5px;color:var(--text-secondary);">Warm paper &amp; soft pastel tones</span>
-              </button>
-              <button type="button" data-theme-choice="dark" class="theme-card">
-                <strong style="font-size:13px;">🌙 Dark Mode</strong>
-                <span style="font-size:11.5px;color:var(--text-secondary);">Low-glare charcoal &amp; muted pastels</span>
-              </button>
-              <button type="button" data-theme-choice="system" class="theme-card">
-                <strong style="font-size:13px;">💻 System Auto</strong>
-                <span style="font-size:11.5px;color:var(--text-secondary);">Follow OS appearance</span>
-              </button>
+          <!-- Google Auth Header Row -->
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;padding-bottom:16px;border-bottom:1px solid var(--border-color);flex-wrap:wrap;">
+            <div>
+              <div id="gcal-auth-status-title" style="font-weight:600;font-size:14px;">Connect Google Calendar</div>
+              <div id="gcal-auth-status-desc" style="font-size:12.5px;color:var(--text-secondary);">Sign in with Google to authorize Calendar event sync</div>
             </div>
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">Connected Platforms</label>
-            <div id="settings-integrations-list" style="display:flex;flex-direction:column;gap:8px;"></div>
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">Workspace Maintenance</label>
-            <div style="display:flex;align-items:center;justify-content:space-between;padding:12px;border-radius:10px;border:1px solid var(--border-color);background:var(--bg-subtle);">
-              <div>
-                <div style="font-weight:500;font-size:13px;">Restore Default Sample Assignments</div>
-                <div style="font-size:11.5px;color:var(--text-secondary);">Reset tasks to the curated student schedule</div>
+            <button type="button" id="btn-gcal-google-signin" class="gsi-material-button">
+              <div class="gsi-material-button-state"></div>
+              <div class="gsi-material-button-content-wrapper">
+                <div class="gsi-material-button-icon">
+                  <svg version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" style="display: block;">
+                    <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"></path>
+                    <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"></path>
+                    <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"></path>
+                    <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"></path>
+                    <path fill="none" d="M0 0h48v48H0z"></path>
+                  </svg>
+                </div>
+                <span id="gcal-signin-btn-text" class="gsi-material-button-contents">Sign in with Google</span>
               </div>
-              <button type="button" id="btn-reset-demo" class="hdr-btn">Reset Demo Data</button>
+            </button>
+          </div>
+
+          <!-- Two-Way Sync Actions -->
+          <div class="form-grid" style="padding-bottom:16px;border-bottom:1px solid var(--border-color);">
+            <div style="display:flex;flex-direction:column;justify-content:space-between;gap:12px;">
+              <div>
+                <div style="font-weight:600;font-size:13.5px;">01. Import from Google Calendar</div>
+                <div style="font-size:12.5px;color:var(--text-secondary);margin-top:4px;">Pull upcoming events (next 30 days) from your primary Google Calendar into Calen.</div>
+              </div>
+              <button type="button" id="btn-gcal-import" class="hdr-btn pastel-sky" style="width:100%;">
+                Import Upcoming Events
+              </button>
             </div>
+
+            <div style="display:flex;flex-direction:column;justify-content:space-between;gap:12px;">
+              <div>
+                <div style="font-weight:600;font-size:13.5px;">02. Export Deadlines to Google</div>
+                <div style="font-size:12.5px;color:var(--text-secondary);margin-top:4px;">Push your pending Calen assignments to your primary Google Calendar.</div>
+              </div>
+              <button type="button" id="btn-gcal-export" class="btn-primary" style="width:100%;">
+                Push Pending Deadlines
+              </button>
+            </div>
+          </div>
+
+          <div id="gcal-feedback-box" class="hidden" style="padding:10px 12px;border-radius:8px;font-size:12.5px;border:1px solid var(--sage-border);background:var(--sage-bg);color:var(--sage-text);"></div>
+
+          <div class="form-group">
+            <label class="form-label">Synced Google Calendar Events</label>
+            <div id="gcal-synced-list" style="display:flex;flex-direction:column;max-height:200px;overflow-y:auto;"></div>
           </div>
         </div>
         <div class="modal-foot">
-          <span style="font-size:12px;color:var(--text-muted);">Preferences are saved locally and synced to Firebase when signed in</span>
-          <button type="button" id="done-settings-modal" class="btn-primary">Done</button>
+          <span style="font-size:12px;color:var(--text-muted);">Requests confirmation before modifying Google Calendar events</span>
+          <button type="button" id="done-gcal-modal" class="btn-primary">Done</button>
         </div>
       </div>
     </div>
 
-    <!-- MODAL 4: MULTI-DEVICE SYNC -->
-    <div id="modal-sync" class="modal-overlay hidden" role="dialog" aria-modal="true">
-      <div class="modal-box">
+    <!-- MODAL 5: EXPLICIT USER CONFIRMATION FOR GOOGLE WORKSPACE MUTATIONS -->
+    <div id="modal-confirm-gcal" class="modal-overlay hidden" role="dialog" aria-modal="true" style="z-index:80;">
+      <div class="modal-box" style="max-width:480px;">
         <div class="modal-hdr">
-          <div>
-            <h2 style="font-size:16px;font-weight:600;">Multi-Device Cloud &amp; Link Sync</h2>
-            <p style="font-size:12px;color:var(--text-secondary);">Sync your tasks across laptop, tablet, and phone via Firebase Firestore</p>
-          </div>
-          <button type="button" id="close-sync-modal" class="hdr-btn hdr-btn-icon" style="width:28px;height:28px;">✕</button>
+          <h2 id="confirm-gcal-title" style="font-size:18px;">Confirm Google Calendar Update</h2>
+          <button type="button" id="close-confirm-gcal" class="hdr-btn hdr-btn-icon" style="width:32px;height:32px;">✕</button>
         </div>
         <div class="modal-body">
-          <div style="padding:14px;border-radius:10px;border:1px solid var(--lavender-border);background:var(--lavender-bg);color:var(--lavender-text);display:flex;align-items:center;justify-content:space-between;gap:12px;">
-            <div>
-              <div id="sync-cloud-title" style="font-weight:600;font-size:13.5px;">Firebase Cloud Firestore Sync</div>
-              <div id="sync-cloud-subtitle" style="font-size:12px;opacity:0.9;">Sign in with Google to automatically sync tasks in real time</div>
-            </div>
-            <button type="button" id="btn-modal-cloud-login" class="btn-primary">Sign In</button>
-          </div>
-
-          <div class="form-group">
-            <label class="form-label" for="sync-share-url">Instant Device Transfer Link (No Login Required)</label>
-            <div style="display:flex;gap:8px;">
-              <input type="text" id="sync-share-url" class="input-field mono" style="flex:1;font-size:11.5px;" readonly />
-              <button type="button" id="btn-copy-sync-url" class="hdr-btn">Copy Link</button>
-            </div>
-          </div>
+          <p id="confirm-gcal-desc" style="font-size:13.5px;color:var(--text-main);"></p>
+          <div id="confirm-gcal-items" style="display:flex;flex-direction:column;gap:8px;max-height:180px;overflow-y:auto;padding:12px 0;border-top:1px solid var(--border-color);border-bottom:1px solid var(--border-color);font-size:13px;"></div>
         </div>
         <div class="modal-foot">
-          <span id="sync-status-msg" style="font-size:12px;color:var(--text-muted);">Real-time BroadcastChannel + LocalStorage active</span>
-          <button type="button" id="done-sync-modal" class="btn-primary">Close</button>
+          <button type="button" id="btn-cancel-confirm-gcal" class="hdr-btn">Cancel</button>
+          <button type="button" id="btn-proceed-confirm-gcal" class="btn-primary">Confirm Action</button>
         </div>
       </div>
     </div>

@@ -2,49 +2,61 @@
   "entities": {
     "Task": {
       "title": "Task",
-      "description": "A student task or course assignment with due date, priority, and source",
+      "description": "Student assignment, deadline, or calendar event synced across platforms.",
       "type": "object",
       "properties": {
-        "id": { "type": "string", "description": "Unique task identifier" },
-        "title": { "type": "string", "maxLength": 300, "description": "Title of the assignment" },
-        "description": { "type": "string", "maxLength": 2000, "description": "Details or rubric guidelines" },
-        "dueDate": { "type": "string", "description": "ISO timestamp for deadline" },
-        "source": { "type": "string", "enum": ["classroom", "moodle", "notion", "trello", "personal"] },
-        "courseName": { "type": "string", "maxLength": 200 },
-        "courseCode": { "type": "string", "maxLength": 50 },
-        "moduleName": { "type": "string", "maxLength": 200 },
-        "externalUrl": { "type": "string", "maxLength": 1000 },
-        "status": { "type": "string", "enum": ["todo", "in_progress", "completed"] },
+        "id": { "type": "string" },
+        "uid": { "type": "string" },
+        "title": { "type": "string" },
         "priority": { "type": "string", "enum": ["low", "medium", "high", "urgent"] },
-        "notes": { "type": "string", "maxLength": 5000 },
-        "completedAt": { "type": "string" },
-        "userId": { "type": "string" }
+        "status": { "type": "string", "enum": ["todo", "in_progress", "completed"] },
+        "source": {
+          "type": "string",
+          "enum": ["moodle", "google_classroom", "google_calendar", "notion", "trello", "personal"]
+        },
+        "course": { "type": "string" },
+        "dueDate": { "type": "string" },
+        "description": { "type": "string" },
+        "gcalEventId": { "type": "string" }
       },
-      "required": ["id", "title", "dueDate", "source", "status", "priority", "userId"]
+      "required": ["id", "uid", "title", "priority", "status", "source", "dueDate"]
+    },
+    "MoodleCourse": {
+      "title": "MoodleCourse",
+      "description": "Enrolled Moodle course configuration and module assignments.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "uid": { "type": "string" },
+        "code": { "type": "string" },
+        "name": { "type": "string" },
+        "synced": { "type": "boolean" }
+      },
+      "required": ["id", "uid", "code", "name", "synced"]
     },
     "UserSettings": {
       "title": "UserSettings",
-      "description": "User preferences and connected platform configurations",
+      "description": "User theme and connected platform preferences.",
       "type": "object",
       "properties": {
-        "userId": { "type": "string" },
-        "theme": { "type": "string", "enum": ["light", "dark", "system"] },
-        "moodle": { "type": "object" },
-        "classroom": { "type": "object" },
-        "notion": { "type": "object" },
-        "trello": { "type": "object" }
+        "uid": { "type": "string" },
+        "theme": { "type": "string", "enum": ["light", "dark", "system"] }
       },
-      "required": ["userId"]
+      "required": ["uid", "theme"]
     }
   },
   "firestore": {
     "/users/{userId}/tasks/{taskId}": {
       "schema": { "$ref": "#/entities/Task" },
-      "description": "User tasks and assignment deadlines"
+      "description": "User tasks and synced deadlines"
     },
-    "/users/{userId}/settings/config": {
+    "/users/{userId}/moodle_courses/{courseId}": {
+      "schema": { "$ref": "#/entities/MoodleCourse" },
+      "description": "User Moodle courses"
+    },
+    "/users/{userId}/settings/{docId}": {
       "schema": { "$ref": "#/entities/UserSettings" },
-      "description": "User sync settings and platform credentials"
+      "description": "User settings and appearance preferences"
     }
   }
 }

@@ -1,5 +1,6 @@
 import {
-  loginWithGoogle,
+  googleSignIn,
+  getAccessToken,
   logoutUser,
   subscribeAuth,
   subscribeUserWorkspace,
@@ -7,7 +8,10 @@ import {
   deleteTaskFromFirestore,
   saveMoodleCoursesToFirestore,
   saveSettingsToFirestore,
-  seedWorkspaceToFirestore
+  seedWorkspaceToFirestore,
+  fetchGoogleCalendarEvents,
+  upsertGoogleCalendarEvent,
+  deleteGoogleCalendarEvent
 } from './firebase.js';
 
 const STORAGE_KEYS = {
@@ -227,11 +231,11 @@ function getInitialTasks() {
 
 // Application State
 const state = {
-  activeView: 'tasks', // 'tasks' | 'calendar'
-  subView: 'table', // 'table' | 'priority' | 'platform' | 'board'
-  calMode: 'month', // 'month' | 'week'
+  activeView: 'tasks',
+  subView: 'table',
+  calMode: 'month',
   calCursor: new Date(),
-  priorityFilter: 'all', // 'all' | 'urgent' | 'high' | 'medium' | 'low'
+  priorityFilter: 'all',
   sourceFilter: 'all',
   statusFilter: 'all',
   searchQuery: '',
@@ -240,13 +244,16 @@ const state = {
   editingTaskId: null,
   draftSubtasks: [],
   user: null,
+  hasGcalToken: false,
   unsubFirestore: null,
+  pendingConfirmCallback: null,
   tasks: [],
   moodleCourses: [],
   settings: {
-    theme: 'dark', // 'light' | 'dark' | 'system'
+    theme: 'dark',
     platforms: {
       moodle: true,
+      google_calendar: true,
       google_classroom: true,
       notion: true,
       trello: true
@@ -257,7 +264,6 @@ const state = {
 const broadcast =
   typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('calen_sync_channel') : null;
 
-// Load initial state from LocalStorage or URL hash
 function loadLocalState() {
   try {
     if (window.location.hash.startsWith('#sync=')) {
@@ -270,14 +276,21 @@ function loadLocalState() {
     }
 
     const rawCourses = localStorage.getItem(STORAGE_KEYS.COURSES);
-    state.moodleCourses = rawCourses ? JSON.parse(rawCourses) : structuredClone(DEFAULT_MOODLE_COURSES);
+    state.moodleCourses = rawCourses
+      ? JSON.parse(rawCourses)
+      : structuredClone(DEFAULT_MOODLE_COURSES);
 
     const rawTasks = localStorage.getItem(STORAGE_KEYS.TASKS);
     state.tasks = rawTasks ? JSON.parse(rawTasks) : getInitialTasks();
 
     const rawSettings = localStorage.getItem(STORAGE_KEYS.SETTINGS);
     if (rawSettings) {
-      state.settings = { ...state.settings, ...JSON.parse(rawSettings) };
+      const parsed = JSON.parse(rawSettings);
+      state.settings = {
+        ...state.settings,
+        ...parsed,
+        platforms: { ...state.settings.platforms, ...(parsed.platforms || {}) }
+      };
     }
   } catch (e) {
     console.warn('Fallback to default state:', e);
@@ -300,7 +313,6 @@ function saveLocalState(broadcastUpdate = true) {
   }
 }
 
-// Theme Management
 function applyTheme() {
   const mode = state.settings.theme || 'dark';
   const prefersDark =
@@ -312,8 +324,8 @@ function applyTheme() {
   const iconEl = document.getElementById('theme-quick-icon');
   if (iconEl) {
     iconEl.innerHTML = isDark
-      ? `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>`
-      : `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>`;
+      ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>`
+      : `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>`;
   }
 
   document.querySelectorAll('[data-theme-choice]').forEach((btn) => {
@@ -323,14 +335,15 @@ function applyTheme() {
 
 // Badge & Formatting Helpers
 const PRIORITY_META = {
-  urgent: { label: 'Urgent', badgeClass: 'badge-rose', rowClass: 'row-urgent', weight: 4 },
-  high: { label: 'High', badgeClass: 'badge-peach', rowClass: 'row-high', weight: 3 },
-  medium: { label: 'Medium', badgeClass: 'badge-butter', rowClass: 'row-medium', weight: 2 },
-  low: { label: 'Low', badgeClass: 'badge-stone', rowClass: 'row-low', weight: 1 }
+  urgent: { label: 'Urgent', badgeClass: 'badge-rose', weight: 4 },
+  high: { label: 'High', badgeClass: 'badge-peach', weight: 3 },
+  medium: { label: 'Medium', badgeClass: 'badge-butter', weight: 2 },
+  low: { label: 'Low', badgeClass: 'badge-stone', weight: 1 }
 };
 
 const SOURCE_META = {
   moodle: { label: 'Moodle', badgeClass: 'badge-peach' },
+  google_calendar: { label: 'Google Calendar', badgeClass: 'badge-sky' },
   google_classroom: { label: 'Classroom', badgeClass: 'badge-sage' },
   notion: { label: 'Notion', badgeClass: 'badge-stone' },
   trello: { label: 'Trello', badgeClass: 'badge-sky' },
@@ -432,38 +445,41 @@ function sortTasks(list) {
 // ============================================================================
 function renderAll() {
   applyTheme();
-  renderHeaderState();
+  renderSettingsSyncStatus();
   renderReminderBanner();
   renderPriorityFocusBar();
   renderTasksSection();
   renderCalendarSection();
+  renderGcalModalContent();
 }
 
-function renderHeaderState() {
+function renderSettingsSyncStatus() {
   const syncedCount = state.moodleCourses.filter((c) => c.synced).length;
   const moodleBtnLabel = document.getElementById('moodle-btn-label');
   if (moodleBtnLabel) {
-    moodleBtnLabel.textContent = `Moodle (${syncedCount})`;
+    moodleBtnLabel.textContent = `Manage Courses (${syncedCount})`;
   }
 
-  const classroomBtn = document.getElementById('btn-classroom-toggle');
-  if (classroomBtn) {
-    classroomBtn.classList.toggle('pastel-sage', state.settings.platforms.google_classroom !== false);
+  const gcalSyncedCount = state.tasks.filter(
+    (t) => t.source === 'google_calendar' || Boolean(t.gcalEventId)
+  ).length;
+  const gcalBtnLabel = document.getElementById('gcal-btn-label');
+  if (gcalBtnLabel) {
+    gcalBtnLabel.textContent =
+      gcalSyncedCount > 0 ? `Sync Calendar (${gcalSyncedCount})` : 'Sync Calendar';
   }
 
-  const cloudLabel = document.getElementById('cloud-auth-label');
-  const modalCloudBtn = document.getElementById('btn-modal-cloud-login');
+  const modalCloudText = document.getElementById('modal-cloud-login-text');
   const syncSub = document.getElementById('sync-cloud-subtitle');
   if (state.user) {
-    const shortName = state.user.displayName?.split(' ')[0] || state.user.email || 'Cloud Synced';
-    if (cloudLabel) cloudLabel.textContent = `Cloud: ${shortName}`;
-    if (modalCloudBtn) modalCloudBtn.textContent = 'Sign Out';
-    if (syncSub) syncSub.textContent = `Signed in as ${state.user.email} — live Firestore sync active`;
-  } else {
-    if (cloudLabel) cloudLabel.textContent = 'Sign in to Cloud';
-    if (modalCloudBtn) modalCloudBtn.textContent = 'Sign In with Google';
+    if (modalCloudText) modalCloudText.textContent = 'Sign out of Google';
     if (syncSub)
-      syncSub.textContent = 'Sign in with Google to automatically sync tasks in real time';
+      syncSub.textContent = `Signed in as ${state.user.email} — live Firestore sync active`;
+  } else {
+    if (modalCloudText) modalCloudText.textContent = 'Sign in with Google';
+    if (syncSub)
+      syncSub.textContent =
+        'Sign in with Google to sync tasks across devices and connect Google Calendar';
   }
 }
 
@@ -490,11 +506,11 @@ function renderReminderBanner() {
   const topTask = pendingUrgent[0];
   const dueInfo = formatDueDate(topTask.dueDate);
   banner.classList.remove('hidden');
-  textEl.innerHTML = `<strong>${dueInfo.isOverdue ? 'Overdue Deadline:' : 'Upcoming Deadline:'}</strong> "${escapeHtml(
-    topTask.title
-  )}" (${escapeHtml(topTask.course || SOURCE_META[topTask.source]?.label)}) — Due ${escapeHtml(
-    dueInfo.text
-  )}`;
+  textEl.innerHTML = `<strong>${
+    dueInfo.isOverdue ? 'Past Due' : 'Next Deadline'
+  }</strong> · ${escapeHtml(topTask.title)} · ${escapeHtml(
+    topTask.course || SOURCE_META[topTask.source]?.label
+  )} · ${escapeHtml(dueInfo.text)}`;
 
   openBtn.onclick = () => openTaskModal(topTask.id);
 }
@@ -513,7 +529,7 @@ function renderPriorityFocusBar() {
   };
 
   const items = [
-    { key: 'all', label: 'All Levels', tone: '' },
+    { key: 'all', label: 'All Priorities', tone: '' },
     { key: 'urgent', label: 'Urgent', tone: 'tone-urgent' },
     { key: 'high', label: 'High', tone: 'tone-high' },
     { key: 'medium', label: 'Medium', tone: 'tone-medium' },
@@ -521,7 +537,7 @@ function renderPriorityFocusBar() {
   ];
 
   bar.innerHTML = `
-    <span class="priority-focus-label">Priority Focus:</span>
+    <span class="priority-focus-label">Priority Focus</span>
     ${items
       .map((item) => {
         const isSelected = state.priorityFilter === item.key;
@@ -536,7 +552,7 @@ function renderPriorityFocusBar() {
         return `
           <button type="button" class="${cls}" data-prio-filter="${item.key}">
             <span>${item.label}</span>
-            <span class="prio-pill-count">(${counts[item.key]})</span>
+            <span class="prio-pill-count">${counts[item.key]}</span>
           </button>
         `;
       })
@@ -555,101 +571,96 @@ function renderPriorityFocusBar() {
 function buildTableHtml(tasks) {
   if (tasks.length === 0) {
     return `
-      <div class="table-card" style="padding:36px;text-align:center;color:var(--text-secondary);">
+      <div style="padding:40px 16px;text-align:center;color:var(--text-secondary);border-bottom:1px solid var(--border-color);">
         No assignments match the current filter. Try clearing filters or adding a new task above.
       </div>
     `;
   }
 
   return `
-    <div class="table-card">
-      <div class="table-scroll">
-        <table class="task-table">
-          <thead>
-            <tr>
-              <th class="col-check">Done</th>
-              <th class="col-title">Task / Assignment Title</th>
-              <th class="col-priority">Priority</th>
-              <th class="col-source">Platform / Course</th>
-              <th class="col-due">Due Date &amp; Time</th>
-              <th class="col-status">Status</th>
-              <th class="col-link">Edit</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${tasks
-              .map((task) => {
-                const prio = PRIORITY_META[task.priority] || PRIORITY_META.medium;
-                const src = SOURCE_META[task.source] || SOURCE_META.personal;
-                const st = STATUS_META[task.status] || STATUS_META.todo;
-                const due = formatDueDate(task.dueDate);
-                const isDone = task.status === 'completed';
-                const subtasks = Array.isArray(task.subtasks) ? task.subtasks : [];
-                const doneSub = subtasks.filter((s) => s.completed).length;
+    <div class="table-scroll">
+      <table class="task-table">
+        <thead>
+          <tr>
+            <th class="col-check">Done</th>
+            <th class="col-title">Assignment</th>
+            <th class="col-priority">Priority</th>
+            <th class="col-source">Course · Platform</th>
+            <th class="col-due">Due Date</th>
+            <th class="col-status">Status</th>
+            <th class="col-link">Edit</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${tasks
+            .map((task) => {
+              const prio = PRIORITY_META[task.priority] || PRIORITY_META.medium;
+              const src = SOURCE_META[task.source] || SOURCE_META.personal;
+              const st = STATUS_META[task.status] || STATUS_META.todo;
+              const due = formatDueDate(task.dueDate);
+              const isDone = task.status === 'completed';
+              const subtasks = Array.isArray(task.subtasks) ? task.subtasks : [];
+              const doneSub = subtasks.filter((s) => s.completed).length;
 
-                return `
-                  <tr class="task-row ${prio.rowClass}" data-row-id="${escapeHtml(task.id)}">
-                    <td class="col-check" data-action="toggle-check" data-id="${escapeHtml(task.id)}">
-                      <span class="check-circle ${isDone ? 'done' : ''}">
-                        ${isDone ? '✓' : ''}
-                      </span>
-                    </td>
-                    <td class="col-title">
-                      <div class="task-title-wrap">
-                        <span class="task-title-text ${isDone ? 'done' : ''}">${escapeHtml(
-                          task.title
-                        )}</span>
-                        ${
-                          subtasks.length > 0
-                            ? `<span class="subtask-counter">${doneSub}/${subtasks.length}</span>`
-                            : ''
-                        }
-                      </div>
-                    </td>
-                    <td class="col-priority" data-action="cycle-priority" data-id="${escapeHtml(
-                      task.id
-                    )}" title="Click to cycle priority level">
-                      <span class="badge ${prio.badgeClass}">
-                        <span class="badge-dot"></span>
-                        <span>${prio.label}</span>
-                      </span>
-                    </td>
-                    <td class="col-source">
-                      <span class="badge ${src.badgeClass}">
-                        <span class="badge-dot"></span>
-                        <span>${escapeHtml(task.course || src.label)}</span>
-                      </span>
-                    </td>
-                    <td class="col-due">
-                      <div class="due-cell-inner ${due.isOverdue && !isDone ? 'overdue' : ''}">
-                        <span>${escapeHtml(due.text)}</span>
-                        ${
-                          due.isOverdue && !isDone
-                            ? `<span class="late-tag">Late</span>`
-                            : ''
-                        }
-                      </div>
-                    </td>
-                    <td class="col-status" data-action="cycle-status" data-id="${escapeHtml(
-                      task.id
-                    )}" title="Click to cycle status">
-                      <span class="badge ${st.badgeClass}">
-                        <span class="badge-dot"></span>
-                        <span>${st.label}</span>
-                      </span>
-                    </td>
-                    <td class="col-link">
-                      <button type="button" class="hdr-btn hdr-btn-icon" style="width:28px;height:28px;" aria-label="Edit assignment">
-                        ✎
-                      </button>
-                    </td>
-                  </tr>
-                `;
-              })
-              .join('')}
-          </tbody>
-        </table>
-      </div>
+              const courseDisplay =
+                task.course && task.course !== src.label
+                  ? `${task.course} · ${src.label}`
+                  : src.label;
+
+              return `
+                <tr class="task-row" data-row-id="${escapeHtml(task.id)}">
+                  <td class="col-check" data-action="toggle-check" data-id="${escapeHtml(task.id)}">
+                    <span class="check-circle ${isDone ? 'done' : ''}">
+                      ${isDone ? '✓' : ''}
+                    </span>
+                  </td>
+                  <td class="col-title">
+                    <div class="task-title-wrap">
+                      <span class="task-title-text ${isDone ? 'done' : ''}">${escapeHtml(
+                        task.title
+                      )}</span>
+                      ${
+                        subtasks.length > 0
+                          ? `<span class="subtask-meta">· ${doneSub}/${subtasks.length}</span>`
+                          : ''
+                      }
+                      ${
+                        task.gcalEventId && task.source !== 'google_calendar'
+                          ? `<span class="subtask-meta" title="Synced with Google Calendar">· GCal</span>`
+                          : ''
+                      }
+                    </div>
+                  </td>
+                  <td class="col-priority" data-action="cycle-priority" data-id="${escapeHtml(
+                    task.id
+                  )}" title="Click to cycle priority level">
+                    <span class="badge ${prio.badgeClass}">${prio.label}</span>
+                  </td>
+                  <td class="col-source">
+                    <span class="source-text">${escapeHtml(courseDisplay)}</span>
+                  </td>
+                  <td class="col-due">
+                    <div class="due-cell-inner ${due.isOverdue && !isDone ? 'overdue' : ''}">
+                      <span>${escapeHtml(due.text)}</span>
+                      ${due.isOverdue && !isDone ? `<span>· Late</span>` : ''}
+                    </div>
+                  </td>
+                  <td class="col-status" data-action="cycle-status" data-id="${escapeHtml(
+                    task.id
+                  )}" title="Click to cycle status">
+                    <span class="badge ${st.badgeClass}">${st.label}</span>
+                  </td>
+                  <td class="col-link">
+                    <button type="button" class="hdr-btn hdr-btn-icon" style="width:28px;height:28px;" aria-label="Edit assignment">
+                      ✎
+                    </button>
+                  </td>
+                </tr>
+              `;
+            })
+            .join('')}
+        </tbody>
+      </table>
     </div>
   `;
 }
@@ -661,7 +672,9 @@ function renderTasksSection() {
 
   const filtered = sortTasks(getVisibleTasks());
   if (totalChip) {
-    totalChip.textContent = `${filtered.length} shown`;
+    totalChip.textContent = `${filtered.length} ${
+      filtered.length === 1 ? 'assignment' : 'assignments'
+    }`;
   }
 
   if (state.subView === 'table') {
@@ -675,27 +688,33 @@ function renderTasksSection() {
             const groupTasks = filtered.filter((t) => t.priority === lvl);
             const meta = PRIORITY_META[lvl];
             return `
-              <div class="table-card">
+              <section class="group-section">
                 <div class="group-header">
-                  <span class="badge ${meta.badgeClass}">
-                    <span class="badge-dot"></span>
-                    <span>${meta.label} Priority</span>
-                  </span>
-                  <span class="count-chip">${groupTasks.length} tasks</span>
+                  <h3 class="group-title">${meta.label} Priority</h3>
+                  <span class="count-meta">${groupTasks.length} ${
+              groupTasks.length === 1 ? 'task' : 'tasks'
+            }</span>
                 </div>
                 ${
                   groupTasks.length > 0
                     ? buildTableHtml(groupTasks)
-                    : `<div style="padding:18px;font-size:13px;color:var(--text-muted);">No tasks in ${meta.label} priority.</div>`
+                    : `<div style="padding:20px 0;font-size:13.5px;color:var(--text-muted);border-bottom:1px solid var(--border-color);">No assignments in ${meta.label} priority.</div>`
                 }
-              </div>
+              </section>
             `;
           })
           .join('')}
       </div>
     `;
   } else if (state.subView === 'platform') {
-    const sources = ['moodle', 'google_classroom', 'notion', 'trello', 'personal'];
+    const sources = [
+      'moodle',
+      'google_calendar',
+      'google_classroom',
+      'notion',
+      'trello',
+      'personal'
+    ];
     container.innerHTML = `
       <div class="group-stack">
         ${sources
@@ -703,20 +722,19 @@ function renderTasksSection() {
             const groupTasks = filtered.filter((t) => t.source === srcKey);
             const meta = SOURCE_META[srcKey];
             return `
-              <div class="table-card">
+              <section class="group-section">
                 <div class="group-header">
-                  <span class="badge ${meta.badgeClass}">
-                    <span class="badge-dot"></span>
-                    <span>${meta.label}</span>
-                  </span>
-                  <span class="count-chip">${groupTasks.length} tasks</span>
+                  <h3 class="group-title">${meta.label}</h3>
+                  <span class="count-meta">${groupTasks.length} ${
+              groupTasks.length === 1 ? 'task' : 'tasks'
+            }</span>
                 </div>
                 ${
                   groupTasks.length > 0
                     ? buildTableHtml(groupTasks)
-                    : `<div style="padding:18px;font-size:13px;color:var(--text-muted);">No tasks synced from ${meta.label}.</div>`
+                    : `<div style="padding:20px 0;font-size:13.5px;color:var(--text-muted);border-bottom:1px solid var(--border-color);">No assignments synced from ${meta.label}.</div>`
                 }
-              </div>
+              </section>
             `;
           })
           .join('')}
@@ -724,9 +742,9 @@ function renderTasksSection() {
     `;
   } else if (state.subView === 'board') {
     const columns = [
-      { key: 'todo', label: 'To Do', badge: 'badge-stone' },
-      { key: 'in_progress', label: 'In Progress', badge: 'badge-sky' },
-      { key: 'completed', label: 'Completed', badge: 'badge-sage' }
+      { key: 'todo', label: 'To Do' },
+      { key: 'in_progress', label: 'In Progress' },
+      { key: 'completed', label: 'Completed' }
     ];
     container.innerHTML = `
       <div class="kanban-grid">
@@ -736,11 +754,8 @@ function renderTasksSection() {
             return `
               <div class="kanban-col">
                 <div class="kanban-col-hdr">
-                  <span class="badge ${col.badge}">
-                    <span class="badge-dot"></span>
-                    <span>${col.label}</span>
-                  </span>
-                  <span class="count-chip">${colTasks.length}</span>
+                  <h3 class="group-title">${col.label}</h3>
+                  <span class="count-meta">${colTasks.length}</span>
                 </div>
                 ${colTasks
                   .map((task) => {
@@ -750,13 +765,8 @@ function renderTasksSection() {
                     return `
                       <div class="kanban-card" data-row-id="${escapeHtml(task.id)}">
                         <div class="kanban-card-top">
-                          <span class="badge ${prio.badgeClass}">
-                            <span class="badge-dot"></span>
-                            <span>${prio.label}</span>
-                          </span>
-                          <span class="badge ${src.badgeClass}">${escapeHtml(
-                            task.course || src.label
-                          )}</span>
+                          <span class="badge ${prio.badgeClass}">${prio.label}</span>
+                          <span class="count-meta">${escapeHtml(task.course || src.label)}</span>
                         </div>
                         <div class="kanban-card-title">${escapeHtml(task.title)}</div>
                         <div class="kanban-card-foot">
@@ -890,15 +900,6 @@ function renderCalendarSection() {
                 <div class="cal-event-chip ${src.badgeClass}" data-event-id="${escapeHtml(
                   task.id
                 )}" title="${escapeHtml(task.title)} (${prio.label})">
-                  <span class="badge-dot" style="background:var(--${
-                    task.priority === 'urgent'
-                      ? 'rose'
-                      : task.priority === 'high'
-                      ? 'peach'
-                      : task.priority === 'medium'
-                      ? 'butter'
-                      : 'stone'
-                  }-dot)"></span>
                   <span style="overflow:hidden;text-overflow:ellipsis;">${escapeHtml(
                     task.title
                   )}</span>
@@ -963,7 +964,260 @@ function cycleTaskStatus(taskId) {
 }
 
 // ============================================================================
-// MODALS LOGIC
+// EXPLICIT USER CONFIRMATION DIALOG FOR GOOGLE WORKSPACE MUTATIONS
+// ============================================================================
+function openGcalConfirmation({ title, description, items, confirmLabel, onConfirm }) {
+  document.getElementById('confirm-gcal-title').textContent = title;
+  document.getElementById('confirm-gcal-desc').textContent = description;
+
+  const itemsContainer = document.getElementById('confirm-gcal-items');
+  itemsContainer.innerHTML = items
+    .map(
+      (item) => `
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+        <span style="font-weight:500;">${escapeHtml(item.title)}</span>
+        <span class="mono" style="font-size:11.5px;color:var(--text-secondary);white-space:nowrap;">${escapeHtml(
+          item.meta || ''
+        )}</span>
+      </div>
+    `
+    )
+    .join('');
+
+  const confirmBtn = document.getElementById('btn-proceed-confirm-gcal');
+  confirmBtn.textContent = confirmLabel || 'Confirm Action';
+  state.pendingConfirmCallback = onConfirm;
+
+  document.getElementById('modal-confirm-gcal').classList.remove('hidden');
+}
+
+function closeGcalConfirmation() {
+  state.pendingConfirmCallback = null;
+  document.getElementById('modal-confirm-gcal').classList.add('hidden');
+}
+
+// ============================================================================
+// GOOGLE CALENDAR SYNC HUB LOGIC
+// ============================================================================
+function showGcalFeedback(msg, isError = false) {
+  const box = document.getElementById('gcal-feedback-box');
+  if (!box) return;
+  box.classList.remove('hidden');
+  box.style.backgroundColor = isError ? 'var(--rose-bg)' : 'var(--sage-bg)';
+  box.style.borderColor = isError ? 'var(--rose-border)' : 'var(--sage-border)';
+  box.style.color = isError ? 'var(--rose-text)' : 'var(--sage-text)';
+  box.textContent = msg;
+}
+
+async function ensureGoogleCalendarToken() {
+  const token = await getAccessToken();
+  if (token) {
+    state.hasGcalToken = true;
+    return token;
+  }
+  const res = await googleSignIn();
+  if (res?.accessToken) {
+    state.user = res.user;
+    state.hasGcalToken = true;
+    renderAll();
+    return res.accessToken;
+  }
+  throw new Error('Google Calendar authorization was cancelled.');
+}
+
+function renderGcalModalContent() {
+  const titleEl = document.getElementById('gcal-auth-status-title');
+  const descEl = document.getElementById('gcal-auth-status-desc');
+  const btnTextEl = document.getElementById('gcal-signin-btn-text');
+  const listEl = document.getElementById('gcal-synced-list');
+  if (!titleEl || !descEl || !btnTextEl || !listEl) return;
+
+  if (state.user && state.hasGcalToken) {
+    titleEl.textContent = 'Google Calendar Connected';
+    descEl.textContent = `Authorized as ${state.user.email} — ready for two-way event sync`;
+    btnTextEl.textContent = 'Reconnect Google';
+  } else if (state.user && !state.hasGcalToken) {
+    titleEl.textContent = 'Authorize Google Calendar Session';
+    descEl.textContent = `Signed in as ${state.user.email} — click Sign in with Google to activate Calendar API access`;
+    btnTextEl.textContent = 'Sign in with Google';
+  } else {
+    titleEl.textContent = 'Connect Google Calendar';
+    descEl.textContent = 'Sign in with Google to authorize Calendar event sync';
+    btnTextEl.textContent = 'Sign in with Google';
+  }
+
+  const syncedTasks = state.tasks.filter(
+    (t) => t.source === 'google_calendar' || Boolean(t.gcalEventId)
+  );
+
+  if (syncedTasks.length === 0) {
+    listEl.innerHTML = `
+      <div style="padding:16px 0;color:var(--text-muted);font-size:13px;">
+        No Google Calendar events synced yet. Use "Import Upcoming Events" or "Push Pending Deadlines" above.
+      </div>
+    `;
+    return;
+  }
+
+  listEl.innerHTML = syncedTasks
+    .map((task) => {
+      const due = formatDueDate(task.dueDate);
+      return `
+        <div class="course-item">
+          <div style="min-width:0;">
+            <div style="font-weight:500;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(
+              task.title
+            )}</div>
+            <div class="mono" style="font-size:11.5px;color:var(--text-secondary);">Due ${escapeHtml(
+              due.text
+            )}</div>
+          </div>
+          ${
+            task.gcalEventId
+              ? `<button type="button" class="hdr-btn" data-remove-gcal-id="${escapeHtml(
+                  task.id
+                )}" style="height:28px;padding:0 10px;font-size:11.5px;color:var(--rose-text);border-color:var(--rose-border);background:var(--rose-bg);">Delete from Google</button>`
+              : ''
+          }
+        </div>
+      `;
+    })
+    .join('');
+
+  listEl.querySelectorAll('[data-remove-gcal-id]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const taskId = btn.getAttribute('data-remove-gcal-id');
+      const task = state.tasks.find((t) => t.id === taskId);
+      if (!task || !task.gcalEventId) return;
+
+      const due = formatDueDate(task.dueDate);
+      openGcalConfirmation({
+        title: 'Delete Event from Google Calendar?',
+        description:
+          'Are you sure you want to permanently delete this event from your primary Google Calendar?',
+        items: [{ title: task.title, meta: due.text }],
+        confirmLabel: 'Delete from Google Calendar',
+        onConfirm: async () => {
+          try {
+            await ensureGoogleCalendarToken();
+            await deleteGoogleCalendarEvent(task.gcalEventId);
+            if (task.source === 'google_calendar') {
+              state.tasks = state.tasks.filter((t) => t.id !== task.id);
+              if (state.user) await deleteTaskFromFirestore(state.user.uid, task.id);
+            } else {
+              delete task.gcalEventId;
+              if (state.user) await saveTaskToFirestore(state.user.uid, task);
+            }
+            saveLocalState();
+            renderAll();
+            showGcalFeedback(`Deleted "${task.title}" from your Google Calendar.`);
+          } catch (err) {
+            showGcalFeedback(err.message || 'Failed to delete Google Calendar event.', true);
+          }
+        }
+      });
+    });
+  });
+}
+
+function openGcalModal() {
+  const box = document.getElementById('gcal-feedback-box');
+  if (box) box.classList.add('hidden');
+  renderGcalModalContent();
+  document.getElementById('modal-gcal').classList.remove('hidden');
+}
+
+async function handleGcalImport() {
+  try {
+    showGcalFeedback('Connecting to Google Calendar API...');
+    await ensureGoogleCalendarToken();
+    const events = await fetchGoogleCalendarEvents(30);
+
+    let importedCount = 0;
+    for (const ev of events) {
+      if (!ev.id || ev.status === 'cancelled') continue;
+      const rawStart = ev.end?.dateTime || ev.start?.dateTime || ev.start?.date;
+      if (!rawStart) continue;
+      const dueIso = new Date(rawStart).toISOString();
+      const cleanSummary = (ev.summary || 'Untitled Calendar Event').replace(/^\[Calen\]\s*/i, '');
+
+      const existing = state.tasks.find(
+        (t) => t.gcalEventId === ev.id || t.id === `gcal-${ev.id}`
+      );
+      if (existing) {
+        existing.title = cleanSummary;
+        existing.dueDate = dueIso;
+        existing.gcalEventId = ev.id;
+        if (state.user) await saveTaskToFirestore(state.user.uid, existing);
+      } else {
+        const newTask = {
+          id: `gcal-${ev.id.slice(0, 32)}`,
+          title: cleanSummary,
+          priority: 'medium',
+          status: 'todo',
+          source: 'google_calendar',
+          course: 'Google Calendar',
+          dueDate: dueIso,
+          description: ev.description || 'Imported from primary Google Calendar.',
+          gcalEventId: ev.id,
+          subtasks: []
+        };
+        state.tasks.unshift(newTask);
+        importedCount++;
+        if (state.user) await saveTaskToFirestore(state.user.uid, newTask);
+      }
+    }
+
+    saveLocalState();
+    renderAll();
+    showGcalFeedback(
+      `Successfully synced ${events.length} event(s) from Google Calendar (${importedCount} new added).`
+    );
+  } catch (err) {
+    showGcalFeedback(err.message || 'Could not import Google Calendar events.', true);
+  }
+}
+
+function handleGcalBulkExportPrompt() {
+  const pendingTasks = state.tasks.filter((t) => t.status !== 'completed');
+  if (pendingTasks.length === 0) {
+    showGcalFeedback('All tasks are already completed — no pending deadlines to push.', true);
+    return;
+  }
+
+  openGcalConfirmation({
+    title: `Push ${pendingTasks.length} Deadline(s) to Google Calendar?`,
+    description: `This will create or update ${pendingTasks.length} event(s) on your primary Google Calendar. Please confirm to proceed:`,
+    items: pendingTasks.map((t) => ({
+      title: t.title,
+      meta: formatDueDate(t.dueDate).text
+    })),
+    confirmLabel: `Push ${pendingTasks.length} Event(s)`,
+    onConfirm: async () => {
+      try {
+        showGcalFeedback('Pushing deadlines to Google Calendar...');
+        await ensureGoogleCalendarToken();
+        let pushed = 0;
+        for (const task of pendingTasks) {
+          const created = await upsertGoogleCalendarEvent(task);
+          if (created?.id) {
+            task.gcalEventId = created.id;
+            pushed++;
+            if (state.user) await saveTaskToFirestore(state.user.uid, task);
+          }
+        }
+        saveLocalState();
+        renderAll();
+        showGcalFeedback(`Successfully synced ${pushed} deadline(s) to your Google Calendar!`);
+      } catch (err) {
+        showGcalFeedback(err.message || 'Failed to push deadlines to Google Calendar.', true);
+      }
+    }
+  });
+}
+
+// ============================================================================
+// OTHER MODALS LOGIC
 // ============================================================================
 function openNewTaskModal(prefillDateStr = null) {
   state.editingTaskId = null;
@@ -986,6 +1240,7 @@ function openNewTaskModal(prefillDateStr = null) {
   document.getElementById('task-time').value = '23:59';
 
   document.getElementById('btn-delete-task').classList.add('hidden');
+  document.getElementById('btn-push-single-gcal').classList.add('hidden');
   renderDraftSubtasks();
   document.getElementById('modal-task').classList.remove('hidden');
 }
@@ -1018,6 +1273,12 @@ function openTaskModal(taskId) {
   }
 
   document.getElementById('btn-delete-task').classList.remove('hidden');
+  const pushBtn = document.getElementById('btn-push-single-gcal');
+  pushBtn.classList.remove('hidden');
+  pushBtn.textContent = task.gcalEventId
+    ? 'Update on Google Calendar'
+    : 'Sync to Google Calendar';
+
   renderDraftSubtasks();
   document.getElementById('modal-task').classList.remove('hidden');
 }
@@ -1029,7 +1290,7 @@ function renderDraftSubtasks() {
   listEl.innerHTML = state.draftSubtasks
     .map(
       (sub, idx) => `
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 10px;border-radius:6px;background:var(--bg-subtle);border:1px solid var(--border-color);">
+      <div class="course-item" style="padding:8px 0;">
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;flex:1;">
           <input type="checkbox" data-sub-idx="${idx}" ${sub.completed ? 'checked' : ''} />
           <span style="${
@@ -1066,10 +1327,8 @@ function openMoodleModal() {
   listEl.innerHTML = state.moodleCourses
     .map(
       (course) => `
-      <label class="course-item ${course.synced ? 'selected' : ''}" data-course-id="${escapeHtml(
-        course.id
-      )}">
-        <div style="display:flex;align-items:center;gap:10px;">
+      <label class="course-item" data-course-id="${escapeHtml(course.id)}">
+        <div style="display:flex;align-items:center;gap:12px;">
           <input type="checkbox" class="moodle-course-chk" value="${escapeHtml(course.id)}" ${
             course.synced ? 'checked' : ''
           } />
@@ -1082,7 +1341,9 @@ function openMoodleModal() {
             )} · ${course.assignments?.length || 0} module deadlines</div>
           </div>
         </div>
-        <span class="badge badge-peach">${course.synced ? 'Synced' : 'Available'}</span>
+        <span class="badge ${course.synced ? 'badge-peach' : 'badge-stone'}">${
+          course.synced ? 'Synced' : 'Available'
+        }</span>
       </label>
     `
     )
@@ -1104,11 +1365,9 @@ function openMoodleModal() {
 async function applyMoodleCourseSync() {
   const syncedCourseIds = new Set(state.moodleCourses.filter((c) => c.synced).map((c) => c.code));
 
-  // Keep non-moodle tasks and custom moodle tasks, plus tasks for synced courses
   const nonCourseMoodleTasks = state.tasks.filter(
     (t) =>
-      t.source !== 'moodle' ||
-      (!t.id.startsWith('mdl-task-') && syncedCourseIds.has(t.course))
+      t.source !== 'moodle' || (!t.id.startsWith('mdl-task-') && syncedCourseIds.has(t.course))
   );
 
   const courseAssignments = state.moodleCourses
@@ -1137,23 +1396,46 @@ async function applyMoodleCourseSync() {
 }
 
 function openSettingsModal() {
+  renderSettingsSyncStatus();
+
+  const gcalToggle = document.getElementById('toggle-plat-gcal');
+  if (gcalToggle) {
+    gcalToggle.checked = state.settings.platforms.google_calendar !== false;
+  }
+
+  const moodleToggle = document.getElementById('toggle-plat-moodle');
+  if (moodleToggle) {
+    moodleToggle.checked = state.settings.platforms.moodle !== false;
+  }
+
   const listEl = document.getElementById('settings-integrations-list');
   if (listEl) {
     const platforms = [
-      { key: 'moodle', name: 'Moodle LMS API & iCal', badge: 'badge-peach' },
-      { key: 'google_classroom', name: 'Google Classroom Courses', badge: 'badge-sage' },
-      { key: 'notion', name: 'Notion Workspace Databases', badge: 'badge-stone' },
-      { key: 'trello', name: 'Trello Project Boards', badge: 'badge-sky' }
+      {
+        key: 'google_classroom',
+        name: 'Google Classroom',
+        desc: 'Sync coursework and essay deadlines'
+      },
+      {
+        key: 'notion',
+        name: 'Notion Workspace',
+        desc: 'Sync study databases and reading lists'
+      },
+      {
+        key: 'trello',
+        name: 'Trello Boards',
+        desc: 'Sync project sprints and group milestones'
+      }
     ];
 
     listEl.innerHTML = platforms
       .map(
         (p) => `
-        <label style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-radius:10px;border:1px solid var(--border-color);background:var(--bg-subtle);cursor:pointer;">
-          <span class="badge ${p.badge}">
-            <span class="badge-dot"></span>
-            <span>${p.name}</span>
-          </span>
+        <label class="course-item">
+          <div>
+            <div style="font-size:13.5px;font-weight:600;">${p.name}</div>
+            <div style="font-size:12px;color:var(--text-secondary);">${p.desc}</div>
+          </div>
           <input type="checkbox" data-platform-toggle="${p.key}" ${
             state.settings.platforms[p.key] !== false ? 'checked' : ''
           } />
@@ -1175,24 +1457,20 @@ function openSettingsModal() {
     });
   }
 
+  const shareInput = document.getElementById('sync-share-url');
+  if (shareInput) {
+    const payload = btoa(unescape(encodeURIComponent(JSON.stringify({ tasks: state.tasks }))));
+    shareInput.value = `${window.location.origin}${window.location.pathname}#sync=${payload}`;
+  }
+
   applyTheme();
   document.getElementById('modal-settings').classList.remove('hidden');
-}
-
-function openSyncModal() {
-  const input = document.getElementById('sync-share-url');
-  if (input) {
-    const payload = btoa(unescape(encodeURIComponent(JSON.stringify({ tasks: state.tasks }))));
-    input.value = `${window.location.origin}${window.location.pathname}#sync=${payload}`;
-  }
-  document.getElementById('modal-sync').classList.remove('hidden');
 }
 
 // ============================================================================
 // EVENT LISTENERS & INITIALIZATION
 // ============================================================================
 function initEvents() {
-  // Primary View Switcher
   document.getElementById('tab-tasks').addEventListener('click', () => {
     state.activeView = 'tasks';
     document.getElementById('tab-tasks').classList.add('active');
@@ -1210,7 +1488,6 @@ function initEvents() {
     renderCalendarSection();
   });
 
-  // Sub-views (Table, By Priority, By Platform, Board)
   document.querySelectorAll('.subview-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
       state.subView = btn.getAttribute('data-subview');
@@ -1220,7 +1497,6 @@ function initEvents() {
     });
   });
 
-  // Search & Filters
   document.getElementById('search-input').addEventListener('input', (e) => {
     state.searchQuery = e.target.value;
     renderTasksSection();
@@ -1241,7 +1517,6 @@ function initEvents() {
     renderTasksSection();
   });
 
-  // Quick Add Bar
   document.getElementById('quick-add-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const titleInput = document.getElementById('quick-add-title');
@@ -1265,14 +1540,23 @@ function initEvents() {
     await persistTask(newTask);
   });
 
-  // Header Buttons
+  // Top Header & Unified Settings Modal Triggers
   document.getElementById('btn-new-task').addEventListener('click', () => openNewTaskModal());
-  document.getElementById('btn-moodle-modal').addEventListener('click', openMoodleModal);
   document.getElementById('btn-settings-modal').addEventListener('click', openSettingsModal);
-  document.getElementById('btn-sync-modal').addEventListener('click', openSyncModal);
+  document.getElementById('btn-gcal-modal').addEventListener('click', openGcalModal);
+  document.getElementById('btn-moodle-modal').addEventListener('click', openMoodleModal);
 
-  document.getElementById('btn-classroom-toggle').addEventListener('click', async () => {
-    state.settings.platforms.google_classroom = !state.settings.platforms.google_classroom;
+  document.getElementById('toggle-plat-gcal').addEventListener('change', async (e) => {
+    state.settings.platforms.google_calendar = e.target.checked;
+    saveLocalState();
+    renderAll();
+    if (state.user) {
+      await saveSettingsToFirestore(state.user.uid, state.settings);
+    }
+  });
+
+  document.getElementById('toggle-plat-moodle').addEventListener('change', async (e) => {
+    state.settings.platforms.moodle = e.target.checked;
     saveLocalState();
     renderAll();
     if (state.user) {
@@ -1290,28 +1574,92 @@ function initEvents() {
     }
   });
 
-  // Cloud Auth Button
   const handleCloudAuthClick = async () => {
     try {
       if (state.user) {
         await logoutUser();
+        state.hasGcalToken = false;
+        renderAll();
       } else {
-        await loginWithGoogle();
+        const res = await googleSignIn();
+        if (res?.accessToken) {
+          state.hasGcalToken = true;
+          renderAll();
+        }
       }
     } catch (err) {
       console.error('Authentication action failed:', err);
     }
   };
-  document.getElementById('btn-cloud-auth').addEventListener('click', handleCloudAuthClick);
   document.getElementById('btn-modal-cloud-login').addEventListener('click', handleCloudAuthClick);
 
-  // Reminder Banner Dismiss
+  document.getElementById('close-gcal-modal').addEventListener('click', () => {
+    document.getElementById('modal-gcal').classList.add('hidden');
+  });
+  document.getElementById('done-gcal-modal').addEventListener('click', () => {
+    document.getElementById('modal-gcal').classList.add('hidden');
+  });
+  document.getElementById('btn-gcal-google-signin').addEventListener('click', async () => {
+    try {
+      const res = await googleSignIn();
+      if (res?.accessToken) {
+        state.user = res.user;
+        state.hasGcalToken = true;
+        renderAll();
+        showGcalFeedback('Connected to Google Calendar! You can now import or push events.');
+      }
+    } catch (err) {
+      showGcalFeedback(err.message || 'Google Sign-In failed.', true);
+    }
+  });
+  document.getElementById('btn-gcal-import').addEventListener('click', handleGcalImport);
+  document.getElementById('btn-gcal-export').addEventListener('click', handleGcalBulkExportPrompt);
+
+  document.getElementById('close-confirm-gcal').addEventListener('click', closeGcalConfirmation);
+  document
+    .getElementById('btn-cancel-confirm-gcal')
+    .addEventListener('click', closeGcalConfirmation);
+  document.getElementById('btn-proceed-confirm-gcal').addEventListener('click', async () => {
+    const cb = state.pendingConfirmCallback;
+    closeGcalConfirmation();
+    if (cb) await cb();
+  });
+
+  document.getElementById('btn-push-single-gcal').addEventListener('click', () => {
+    if (!state.editingTaskId) return;
+    const task = state.tasks.find((t) => t.id === state.editingTaskId);
+    if (!task) return;
+
+    const actionVerb = task.gcalEventId ? 'Update' : 'Create';
+    openGcalConfirmation({
+      title: `${actionVerb} Event on Google Calendar?`,
+      description: `Are you sure you want to ${actionVerb.toLowerCase()} "${task.title}" on your primary Google Calendar?`,
+      items: [{ title: task.title, meta: formatDueDate(task.dueDate).text }],
+      confirmLabel: `${actionVerb} on Google Calendar`,
+      onConfirm: async () => {
+        try {
+          await ensureGoogleCalendarToken();
+          const result = await upsertGoogleCalendarEvent(task);
+          if (result?.id) {
+            task.gcalEventId = result.id;
+            await persistTask(task);
+          }
+          document.getElementById('modal-task').classList.add('hidden');
+          openGcalModal();
+          showGcalFeedback(`Synced "${task.title}" to your primary Google Calendar.`);
+        } catch (err) {
+          openGcalModal();
+          showGcalFeedback(err.message || 'Failed to sync task to Google Calendar.', true);
+        }
+      }
+    });
+  });
+
   document.getElementById('btn-dismiss-reminder').addEventListener('click', () => {
     state.reminderDismissed = true;
     renderReminderBanner();
   });
 
-  // Calendar Controls
   document.getElementById('cal-today-btn').addEventListener('click', () => {
     state.calCursor = new Date();
     renderCalendarSection();
@@ -1357,7 +1705,6 @@ function initEvents() {
     renderCalendarSection();
   });
 
-  // Task Modal Form
   document.getElementById('close-task-modal').addEventListener('click', () => {
     document.getElementById('modal-task').classList.add('hidden');
   });
@@ -1381,7 +1728,11 @@ function initEvents() {
     const timeVal = document.getElementById('task-time').value || '23:59';
     const dueIso = new Date(`${dateVal}T${timeVal}`).toISOString();
 
+    const existingIdx = state.tasks.findIndex((t) => t.id === id);
+    const prevTask = existingIdx >= 0 ? state.tasks[existingIdx] : {};
+
     const updated = {
+      ...prevTask,
       id,
       title: document.getElementById('task-title').value.trim(),
       priority: document.getElementById('task-priority').value,
@@ -1393,7 +1744,6 @@ function initEvents() {
       subtasks: state.draftSubtasks
     };
 
-    const existingIdx = state.tasks.findIndex((t) => t.id === id);
     if (existingIdx >= 0) {
       state.tasks[existingIdx] = updated;
     } else {
@@ -1416,7 +1766,6 @@ function initEvents() {
     }
   });
 
-  // Moodle Modal Controls
   document.getElementById('close-moodle-modal').addEventListener('click', () => {
     document.getElementById('modal-moodle').classList.add('hidden');
   });
@@ -1430,15 +1779,17 @@ function initEvents() {
     const imported = [];
     blocks.forEach((b, i) => {
       const summaryMatch = b.match(/SUMMARY:(.*)/);
-      const dtMatch = b.match(/DTEND(?:;[^:]*)?:(\d{8}T\d{6}Z?)/) || b.match(/DTSTART(?:;[^:]*)?:(\d{8}T\d{6}Z?)/);
+      const dtMatch =
+        b.match(/DTEND(?:;[^:]*)?:(\d{8}T\d{6}Z?)/) ||
+        b.match(/DTSTART(?:;[^:]*)?:(\d{8}T\d{6}Z?)/);
       const title = summaryMatch ? summaryMatch[1].trim() : `Moodle Event #${i + 1}`;
       let dueDate = offsetDateISO(2, 23, 59);
       if (dtMatch) {
         const s = dtMatch[1];
-        const iso = `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}T${s.slice(9, 11)}:${s.slice(
-          11,
-          13
-        )}:00Z`;
+        const iso = `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}T${s.slice(
+          9,
+          11
+        )}:${s.slice(11, 13)}:00Z`;
         const parsed = new Date(iso);
         if (!Number.isNaN(parsed.getTime())) dueDate = parsed.toISOString();
       }
@@ -1469,7 +1820,6 @@ function initEvents() {
     }
   });
 
-  // Settings Modal Controls
   document.getElementById('close-settings-modal').addEventListener('click', () => {
     document.getElementById('modal-settings').classList.add('hidden');
   });
@@ -1504,13 +1854,6 @@ function initEvents() {
     document.getElementById('modal-settings').classList.add('hidden');
   });
 
-  // Sync Modal Controls
-  document.getElementById('close-sync-modal').addEventListener('click', () => {
-    document.getElementById('modal-sync').classList.add('hidden');
-  });
-  document.getElementById('done-sync-modal').addEventListener('click', () => {
-    document.getElementById('modal-sync').classList.add('hidden');
-  });
   document.getElementById('btn-copy-sync-url').addEventListener('click', () => {
     const input = document.getElementById('sync-share-url');
     navigator.clipboard?.writeText(input.value);
@@ -1521,7 +1864,6 @@ function initEvents() {
     }, 1800);
   });
 
-  // Cross-tab BroadcastChannel listener
   if (broadcast) {
     broadcast.onmessage = (event) => {
       if (event.data?.tasks) state.tasks = event.data.tasks;
@@ -1532,9 +1874,9 @@ function initEvents() {
     };
   }
 
-  // Firebase Auth & Real-Time Firestore Subscription
-  subscribeAuth((user) => {
+  subscribeAuth((user, token) => {
     state.user = user;
+    state.hasGcalToken = Boolean(token);
     if (state.unsubFirestore) {
       state.unsubFirestore();
       state.unsubFirestore = null;
@@ -1576,7 +1918,6 @@ function initEvents() {
   });
 }
 
-// Bootstrap Application
 loadLocalState();
 initEvents();
 renderAll();
