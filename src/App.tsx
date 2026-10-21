@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Task, ViewMode, IntegrationSettings } from './types';
 import { INITIAL_TASKS, INITIAL_SETTINGS } from './services/seedData';
 import { 
@@ -9,6 +9,19 @@ import {
   subscribeToCrossTabSync,
   checkIncomingSyncPayload 
 } from './services/crossDeviceSync';
+import { 
+  auth, 
+  testConnection, 
+  loginWithGoogle, 
+  loginAnonymously, 
+  logoutUser,
+  subscribeToUserTasks, 
+  saveTaskToFirestore, 
+  deleteTaskFromFirestore,
+  saveSettingsToFirestore,
+  subscribeToUserSettings
+} from './services/firebase';
+import { onAuthStateChanged, User } from 'firebase/auth';
 import { getUpcomingAlerts } from './services/notificationService';
 import { Header } from './components/Header';
 import { NotificationBanner } from './components/NotificationBanner';
@@ -25,10 +38,67 @@ export default function App() {
   const [currentView, setCurrentView] = useState<ViewMode>('tasks');
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
 
+  // Firebase auth & cloud sync status
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [isCloudSynced, setIsCloudSynced] = useState(false);
+  const isInitialSyncDone = useRef(false);
+
   // Modals state
   const [isMoodleModalOpen, setIsMoodleModalOpen] = useState(false);
   const [isIntegrationsModalOpen, setIsIntegrationsModalOpen] = useState(false);
   const [isDeviceSyncModalOpen, setIsDeviceSyncModalOpen] = useState(false);
+
+  // Test Firestore connection on boot
+  useEffect(() => {
+    testConnection().then((connected) => {
+      setIsCloudSynced(connected);
+    });
+  }, []);
+
+  // Firebase Authentication & Realtime Firestore sync
+  useEffect(() => {
+    const unsubAuth = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        setCurrentUser(user);
+        setIsCloudSynced(true);
+
+        // Subscribe to user tasks
+        const unsubTasks = subscribeToUserTasks(
+          user.uid,
+          (firestoreTasks) => {
+            if (firestoreTasks.length > 0) {
+              setTasks(firestoreTasks);
+              isInitialSyncDone.current = true;
+            } else if (!isInitialSyncDone.current) {
+              // Seed initial tasks if remote is brand new
+              tasks.forEach((t) => saveTaskToFirestore(user.uid, t));
+              isInitialSyncDone.current = true;
+            }
+          },
+          () => {
+            // Keep local fallback
+          }
+        );
+
+        // Subscribe to user settings
+        const unsubSettings = subscribeToUserSettings(user.uid, (remoteSettings) => {
+          if (remoteSettings && remoteSettings.theme) {
+            setSettings(remoteSettings);
+          }
+        });
+
+        return () => {
+          unsubTasks();
+          unsubSettings();
+        };
+      } else {
+        // Sign in anonymously to guarantee persistent cloud syncing without requiring manual Google account login
+        loginAnonymously().catch(() => {});
+      }
+    });
+
+    return () => unsubAuth();
+  }, []);
 
   // Check if incoming device sync link was clicked
   useEffect(() => {
@@ -50,7 +120,10 @@ export default function App() {
 
   useEffect(() => {
     saveSettings(settings);
-  }, [settings]);
+    if (currentUser) {
+      saveSettingsToFirestore(currentUser.uid, settings).catch(() => {});
+    }
+  }, [settings, currentUser]);
 
   // Cross-tab sync via BroadcastChannel
   useEffect(() => {
@@ -64,10 +137,48 @@ export default function App() {
     return unsubscribe;
   }, []);
 
+  // Synchronize HTML dark class with settings.theme (Light / Dark / System)
+  useEffect(() => {
+    const applyTheme = () => {
+      const mode = settings.theme || 'light';
+      let isDark = false;
+      if (mode === 'dark') {
+        isDark = true;
+      } else if (mode === 'system') {
+        isDark = typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      }
+
+      if (isDark) {
+        document.documentElement.classList.add('dark');
+        document.documentElement.style.colorScheme = 'dark';
+      } else {
+        document.documentElement.classList.remove('dark');
+        document.documentElement.style.colorScheme = 'light';
+      }
+    };
+
+    applyTheme();
+
+    if (settings.theme === 'system' && typeof window !== 'undefined') {
+      const media = window.matchMedia('(prefers-color-scheme: dark)');
+      const listener = () => applyTheme();
+      media.addEventListener('change', listener);
+      return () => media.removeEventListener('change', listener);
+    }
+  }, [settings.theme]);
+
+  const handleToggleTheme = () => {
+    const isCurrentlyDark = document.documentElement.classList.contains('dark');
+    setSettings((prev) => ({
+      ...prev,
+      theme: isCurrentlyDark ? 'light' : 'dark',
+    }));
+  };
+
   // Calculate upcoming deadline alerts
   const alerts = useMemo(() => getUpcomingAlerts(tasks), [tasks]);
 
-  // Task operations
+  // Task operations (Firestore + Local)
   const handleAddTask = (newTaskData: Partial<Task>) => {
     const newTask: Task = {
       id: `task-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
@@ -86,6 +197,10 @@ export default function App() {
     };
     setTasks((prev) => [newTask, ...prev]);
     setSelectedTask(newTask);
+
+    if (currentUser) {
+      saveTaskToFirestore(currentUser.uid, newTask).catch(() => {});
+    }
   };
 
   const handleAddTaskOnDate = (dateIso: string) => {
@@ -103,12 +218,18 @@ export default function App() {
     if (selectedTask?.id === updatedTask.id) {
       setSelectedTask(updatedTask);
     }
+    if (currentUser) {
+      saveTaskToFirestore(currentUser.uid, updatedTask).catch(() => {});
+    }
   };
 
   const handleDeleteTask = (taskId: string) => {
     setTasks((prev) => prev.filter((t) => t.id !== taskId));
     if (selectedTask?.id === taskId) {
       setSelectedTask(null);
+    }
+    if (currentUser) {
+      deleteTaskFromFirestore(currentUser.uid, taskId).catch(() => {});
     }
   };
 
@@ -132,12 +253,18 @@ export default function App() {
     }));
 
     setTasks((prev) => [...created, ...prev]);
+    if (currentUser) {
+      created.forEach((task) => saveTaskToFirestore(currentUser.uid, task).catch(() => {}));
+    }
   };
 
   const handleImportWorkspace = (importedTasks: Task[], importedSettings: IntegrationSettings) => {
     setTasks(importedTasks);
     if (importedSettings) {
       setSettings(importedSettings);
+    }
+    if (currentUser) {
+      importedTasks.forEach((t) => saveTaskToFirestore(currentUser.uid, t).catch(() => {}));
     }
   };
 
@@ -165,6 +292,11 @@ export default function App() {
         onOpenDeviceSyncModal={() => setIsDeviceSyncModalOpen(true)}
         onQuickAddTask={() => handleAddTask({ title: 'New Assignment / Task' })}
         onSelectTask={setSelectedTask}
+        onToggleTheme={handleToggleTheme}
+        isCloudSynced={isCloudSynced}
+        currentUser={currentUser}
+        onLogin={loginWithGoogle}
+        onLogout={logoutUser}
       />
 
       {/* Urgent Deadline Alert Banner */}

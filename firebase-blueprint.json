@@ -1,0 +1,50 @@
+{
+  "entities": {
+    "Task": {
+      "title": "Task",
+      "description": "A student task or course assignment with due date, priority, and source",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique task identifier" },
+        "title": { "type": "string", "maxLength": 300, "description": "Title of the assignment" },
+        "description": { "type": "string", "maxLength": 2000, "description": "Details or rubric guidelines" },
+        "dueDate": { "type": "string", "description": "ISO timestamp for deadline" },
+        "source": { "type": "string", "enum": ["classroom", "moodle", "notion", "trello", "personal"] },
+        "courseName": { "type": "string", "maxLength": 200 },
+        "courseCode": { "type": "string", "maxLength": 50 },
+        "moduleName": { "type": "string", "maxLength": 200 },
+        "externalUrl": { "type": "string", "maxLength": 1000 },
+        "status": { "type": "string", "enum": ["todo", "in_progress", "completed"] },
+        "priority": { "type": "string", "enum": ["low", "medium", "high", "urgent"] },
+        "notes": { "type": "string", "maxLength": 5000 },
+        "completedAt": { "type": "string" },
+        "userId": { "type": "string" }
+      },
+      "required": ["id", "title", "dueDate", "source", "status", "priority", "userId"]
+    },
+    "UserSettings": {
+      "title": "UserSettings",
+      "description": "User preferences and connected platform configurations",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "theme": { "type": "string", "enum": ["light", "dark", "system"] },
+        "moodle": { "type": "object" },
+        "classroom": { "type": "object" },
+        "notion": { "type": "object" },
+        "trello": { "type": "object" }
+      },
+      "required": ["userId"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/tasks/{taskId}": {
+      "schema": { "$ref": "#/entities/Task" },
+      "description": "User tasks and assignment deadlines"
+    },
+    "/users/{userId}/settings/config": {
+      "schema": { "$ref": "#/entities/UserSettings" },
+      "description": "User sync settings and platform credentials"
+    }
+  }
+}

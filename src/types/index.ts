@@ -80,7 +80,10 @@ export interface TrelloIntegrationConfig {
   lastSync?: string;
 }
 
+export type ThemeMode = 'light' | 'dark' | 'system';
+
 export interface IntegrationSettings {
+  theme: ThemeMode;
   moodle: MoodleIntegrationConfig;
   classroom: ClassroomIntegrationConfig;
   notion: NotionIntegrationConfig;
@@ -88,5 +91,5 @@ export interface IntegrationSettings {
 }
 
 export type ViewMode = 'tasks' | 'calendar';
-export type TaskListViewType = 'table' | 'by-source' | 'kanban';
+export type TaskListViewType = 'table' | 'by-source' | 'by-priority' | 'kanban';
 export type CalendarViewType = 'month' | 'week';

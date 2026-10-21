@@ -1,0 +1,57 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global catch-all default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Common security helpers
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidTask(data, userId) {
+      return data.id is string && data.id.size() <= 128
+        && data.title is string && data.title.size() > 0 && data.title.size() <= 300
+        && data.dueDate is string && data.dueDate.size() <= 64
+        && data.source is string && data.source in ['classroom', 'moodle', 'notion', 'trello', 'personal']
+        && data.status is string && data.status in ['todo', 'in_progress', 'completed']
+        && data.priority is string && data.priority in ['low', 'medium', 'high', 'urgent']
+        && data.userId == userId;
+    }
+
+    // Health / connection test document
+    match /test/{docId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // User private data isolation (Tasks)
+    match /users/{userId}/tasks/{taskId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId)
+        && isValidId(taskId)
+        && isValidTask(request.resource.data, userId);
+      allow update: if isOwner(userId)
+        && isValidId(taskId)
+        && isValidTask(request.resource.data, userId);
+      allow delete: if isOwner(userId)
+        && isValidId(taskId);
+    }
+
+    // User private settings & connected platform configs
+    match /users/{userId}/settings/{docId} {
+      allow read: if isOwner(userId);
+      allow write: if isOwner(userId) && isValidId(docId);
+    }
+  }
+}

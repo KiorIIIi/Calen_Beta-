@@ -3,15 +3,7 @@ import { Task, CalendarViewType, TaskSource } from '../types';
 import { 
   ChevronLeft, 
   ChevronRight, 
-  Calendar as CalendarIcon, 
   Plus, 
-  Clock, 
-  Filter, 
-  BookOpen, 
-  GraduationCap, 
-  Layers, 
-  LayoutGrid,
-  CheckCircle2
 } from 'lucide-react';
 
 interface Props {
@@ -106,7 +98,6 @@ export const CalendarView: React.FC<Props> = ({
     weekDays.push(d);
   }
 
-  // Format date helper
   const isSameDay = (d1: Date, d2: Date) => {
     return (
       d1.getFullYear() === d2.getFullYear() &&
@@ -120,19 +111,20 @@ export const CalendarView: React.FC<Props> = ({
     return filteredTasks.filter((t) => t.dueDate.startsWith(dateStr));
   };
 
+  // Soft and pastel Notion palette
   const getSourceColor = (source: TaskSource) => {
     switch (source) {
       case 'classroom':
-        return 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800';
+        return 'bg-[#edf4ed] text-[#2c5b40] border-[#d4e6d3] dark:bg-[#1a271f] dark:text-[#a0d2b3] dark:border-[#273d2f]';
       case 'moodle':
-        return 'bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-300 border-amber-300 dark:border-amber-800';
+        return 'bg-[#faf1e8] text-[#8c4c1a] border-[#f1dccb] dark:bg-[#281c15] dark:text-[#edb187] dark:border-[#422e20]';
       case 'notion':
-        return 'bg-neutral-100 dark:bg-neutral-800 text-neutral-800 dark:text-neutral-200 border-neutral-300 dark:border-neutral-700';
+        return 'bg-[#f3f2ef] text-[#474542] border-[#dedcd7] dark:bg-[#232322] dark:text-[#d4d1cb] dark:border-[#383735]';
       case 'trello':
-        return 'bg-sky-50 dark:bg-sky-950/40 text-sky-800 dark:text-sky-300 border-sky-300 dark:border-sky-800';
+        return 'bg-[#edf4f9] text-[#255a7b] border-[#d2e4f0] dark:bg-[#182631] dark:text-[#9bcbe6] dark:border-[#263c4d]';
       case 'personal':
       default:
-        return 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-800 dark:text-indigo-300 border-indigo-300 dark:border-indigo-800';
+        return 'bg-[#f5f1f8] text-[#593b74] border-[#ded4e9] dark:bg-[#231b2b] dark:text-[#cbaee6] dark:border-[#3f304a]';
     }
   };
 
@@ -146,13 +138,13 @@ export const CalendarView: React.FC<Props> = ({
 
   return (
     <div className="space-y-4 max-w-7xl mx-auto px-4 sm:px-6 py-6 animate-in fade-in">
-      {/* Notion-style Calendar Controls */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-neutral-200/70 dark:border-neutral-800">
+      {/* Calendar Header Controls */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-[#e8e7e3] dark:border-neutral-800">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-neutral-900 dark:text-neutral-100 font-sans flex items-center gap-2">
+          <h1 className="text-2xl font-bold tracking-tight text-[#37352f] dark:text-neutral-100 font-sans flex items-center gap-2">
             <span>{monthNames[month]} {year}</span>
           </h1>
-          <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+          <p className="text-xs text-[#787774] dark:text-neutral-400 mt-1">
             Visual assignment calendar with real-time course deadline milestones
           </p>
         </div>
@@ -163,7 +155,7 @@ export const CalendarView: React.FC<Props> = ({
           <select
             value={sourceFilter}
             onChange={(e) => setSourceFilter(e.target.value)}
-            className="px-2.5 py-1 text-xs border border-neutral-200 dark:border-neutral-800 rounded-lg bg-white dark:bg-neutral-900 text-neutral-700 dark:text-neutral-300 focus:outline-none"
+            className="px-2.5 py-1 text-xs border border-[#e2e1dc] dark:border-neutral-800 rounded-lg bg-white dark:bg-neutral-900 text-[#474542] dark:text-neutral-300 focus:outline-none"
           >
             <option value="all">All Integrations</option>
             <option value="moodle">Moodle Assignments</option>
@@ -174,13 +166,13 @@ export const CalendarView: React.FC<Props> = ({
           </select>
 
           {/* Month / Week Switch */}
-          <div className="flex items-center p-0.5 bg-neutral-100 dark:bg-neutral-800 rounded-lg text-xs font-medium border border-neutral-200/60 dark:border-neutral-700/60">
+          <div className="flex items-center p-0.5 bg-[#f1f1ef] dark:bg-neutral-800/80 rounded-lg text-xs font-medium border border-[#e5e4e0] dark:border-neutral-700/60">
             <button
               onClick={() => setViewMode('month')}
               className={`px-2.5 py-1 rounded transition-colors ${
                 viewMode === 'month'
-                  ? 'bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 shadow-xs font-semibold'
-                  : 'text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200'
+                  ? 'bg-white dark:bg-neutral-900 text-[#37352f] dark:text-neutral-100 shadow-2xs font-semibold'
+                  : 'text-[#787774] hover:text-[#37352f] dark:hover:text-neutral-200'
               }`}
             >
               Month
@@ -189,8 +181,8 @@ export const CalendarView: React.FC<Props> = ({
               onClick={() => setViewMode('week')}
               className={`px-2.5 py-1 rounded transition-colors ${
                 viewMode === 'week'
-                  ? 'bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 shadow-xs font-semibold'
-                  : 'text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200'
+                  ? 'bg-white dark:bg-neutral-900 text-[#37352f] dark:text-neutral-100 shadow-2xs font-semibold'
+                  : 'text-[#787774] hover:text-[#37352f] dark:hover:text-neutral-200'
               }`}
             >
               Week
@@ -198,23 +190,23 @@ export const CalendarView: React.FC<Props> = ({
           </div>
 
           {/* Nav arrows & Today button */}
-          <div className="flex items-center gap-1 border border-neutral-200 dark:border-neutral-800 rounded-lg p-0.5 bg-white dark:bg-neutral-900">
+          <div className="flex items-center gap-1 border border-[#e2e1dc] dark:border-neutral-800 rounded-lg p-0.5 bg-white dark:bg-neutral-900">
             <button
               onClick={prevPeriod}
-              className="p-1 text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800"
+              className="p-1 text-[#787774] hover:text-[#37352f] dark:hover:text-neutral-100 rounded hover:bg-[#f1f1ef] dark:hover:bg-neutral-800"
               title="Previous period"
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
             <button
               onClick={jumpToToday}
-              className="px-2 py-0.5 text-xs font-medium text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded"
+              className="px-2 py-0.5 text-xs font-medium text-[#474542] dark:text-neutral-300 hover:bg-[#f1f1ef] dark:hover:bg-neutral-800 rounded"
             >
               Today
             </button>
             <button
               onClick={nextPeriod}
-              className="p-1 text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800"
+              className="p-1 text-[#787774] hover:text-[#37352f] dark:hover:text-neutral-100 rounded hover:bg-[#f1f1ef] dark:hover:bg-neutral-800"
               title="Next period"
             >
               <ChevronRight className="w-4 h-4" />
@@ -225,16 +217,16 @@ export const CalendarView: React.FC<Props> = ({
 
       {/* MONTH VIEW */}
       {viewMode === 'month' && (
-        <div className="border border-neutral-200 dark:border-neutral-800 rounded-xl overflow-hidden bg-white dark:bg-[#181818] shadow-xs">
+        <div className="border border-[#e5e4e0] dark:border-neutral-800 rounded-xl overflow-hidden bg-white dark:bg-[#181818] shadow-2xs">
           {/* Day Names Header */}
-          <div className="grid grid-cols-7 border-b border-neutral-200 dark:border-neutral-800 bg-neutral-50/80 dark:bg-neutral-900/60 text-center py-2 text-xs font-medium text-neutral-500">
+          <div className="grid grid-cols-7 border-b border-[#e8e7e3] dark:border-neutral-800 bg-[#fbfbfa] dark:bg-neutral-900/60 text-center py-2 text-xs font-medium text-[#787774]">
             {dayNames.map((name) => (
               <div key={name}>{name}</div>
             ))}
           </div>
 
           {/* 7x6 Month Grid */}
-          <div className="grid grid-cols-7 auto-rows-fr divide-x divide-y divide-neutral-150 dark:divide-neutral-800/80">
+          <div className="grid grid-cols-7 auto-rows-fr divide-x divide-y divide-[#ecebe7] dark:divide-neutral-800/80">
             {calendarCells.map((cell, index) => {
               const dayTasks = getTasksForDate(cell.date);
               const isTodayCell = isSameDay(cell.date, today);
@@ -245,16 +237,16 @@ export const CalendarView: React.FC<Props> = ({
                   className={`min-h-[115px] sm:min-h-[130px] p-1.5 flex flex-col group transition-colors ${
                     cell.isCurrentMonth
                       ? 'bg-white dark:bg-[#181818]'
-                      : 'bg-neutral-50/50 dark:bg-[#141414]/50 opacity-40'
-                  } hover:bg-neutral-50/80 dark:hover:bg-neutral-800/30`}
+                      : 'bg-[#faf9f7] dark:bg-[#141414]/50 opacity-45'
+                  } hover:bg-[#fcfbf9] dark:hover:bg-neutral-800/30`}
                 >
                   {/* Date number & Quick Add button */}
                   <div className="flex items-center justify-between mb-1">
                     <span
                       className={`text-xs font-medium inline-flex items-center justify-center w-6 h-6 rounded-full ${
                         isTodayCell
-                          ? 'bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 font-bold'
-                          : 'text-neutral-700 dark:text-neutral-300'
+                          ? 'bg-[#eef4ee] text-[#2c5b40] border border-[#d4e6d3] font-bold'
+                          : 'text-[#474542] dark:text-neutral-300'
                       }`}
                     >
                       {cell.date.getDate()}
@@ -265,7 +257,7 @@ export const CalendarView: React.FC<Props> = ({
                         const dateStr = cell.date.toISOString().slice(0, 10) + 'T17:00';
                         onAddTaskOnDate(dateStr);
                       }}
-                      className="opacity-0 group-hover:opacity-100 p-0.5 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 rounded hover:bg-neutral-200/60 dark:hover:bg-neutral-700 transition-opacity"
+                      className="opacity-0 group-hover:opacity-100 p-0.5 text-[#9c9a95] hover:text-[#37352f] dark:hover:text-neutral-200 rounded hover:bg-[#f1f1ef] dark:hover:bg-neutral-700 transition-opacity"
                       title="Add task on this day"
                     >
                       <Plus className="w-3.5 h-3.5" />
@@ -285,9 +277,9 @@ export const CalendarView: React.FC<Props> = ({
                         <div
                           key={task.id}
                           onClick={() => onSelectTask(task)}
-                          className={`px-1.5 py-0.5 rounded text-[11px] font-medium border truncate cursor-pointer transition-all hover:scale-[1.02] ${getSourceColor(
+                          className={`px-1.5 py-0.5 rounded-md text-[11px] font-medium border truncate cursor-pointer transition-all hover:opacity-85 ${getSourceColor(
                             task.source
-                          )} ${isDone ? 'opacity-50 line-through' : ''}`}
+                          )} ${isDone ? 'opacity-40 line-through' : ''}`}
                           title={`${task.title} • ${timeStr} • ${task.courseCode || task.courseName || task.source}`}
                         >
                           <div className="flex items-center gap-1 truncate">
@@ -307,9 +299,9 @@ export const CalendarView: React.FC<Props> = ({
 
       {/* WEEK VIEW */}
       {viewMode === 'week' && (
-        <div className="border border-neutral-200 dark:border-neutral-800 rounded-xl overflow-hidden bg-white dark:bg-[#181818] shadow-xs">
+        <div className="border border-[#e5e4e0] dark:border-neutral-800 rounded-xl overflow-hidden bg-white dark:bg-[#181818] shadow-2xs">
           {/* Day Names Header */}
-          <div className="grid grid-cols-7 border-b border-neutral-200 dark:border-neutral-800 bg-neutral-50/80 dark:bg-neutral-900/60 text-center py-2.5 text-xs font-medium text-neutral-500">
+          <div className="grid grid-cols-7 border-b border-[#e8e7e3] dark:border-neutral-800 bg-[#fbfbfa] dark:bg-neutral-900/60 text-center py-2.5 text-xs font-medium text-[#787774]">
             {weekDays.map((day, idx) => {
               const isTodayDay = isSameDay(day, today);
               return (
@@ -318,8 +310,8 @@ export const CalendarView: React.FC<Props> = ({
                   <div
                     className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold ${
                       isTodayDay
-                        ? 'bg-neutral-900 text-white dark:bg-white dark:text-neutral-900'
-                        : 'text-neutral-800 dark:text-neutral-200'
+                        ? 'bg-[#eef4ee] text-[#2c5b40] border border-[#d4e6d3]'
+                        : 'text-[#474542] dark:text-neutral-200'
                     }`}
                   >
                     {day.getDate()}
@@ -330,7 +322,7 @@ export const CalendarView: React.FC<Props> = ({
           </div>
 
           {/* 7 Columns for the week */}
-          <div className="grid grid-cols-7 divide-x divide-neutral-150 dark:divide-neutral-800 min-h-[480px]">
+          <div className="grid grid-cols-7 divide-x divide-[#ecebe7] dark:divide-neutral-800 min-h-[480px]">
             {weekDays.map((day, idx) => {
               const dayTasks = getTasksForDate(day);
               return (
@@ -341,7 +333,7 @@ export const CalendarView: React.FC<Props> = ({
                         const dateStr = day.toISOString().slice(0, 10) + 'T17:00';
                         onAddTaskOnDate(dateStr);
                       }}
-                      className="p-1 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 text-[10px] flex items-center gap-0.5"
+                      className="p-1 text-[#9c9a95] hover:text-[#37352f] dark:hover:text-neutral-200 rounded hover:bg-[#f1f1ef] dark:hover:bg-neutral-800 text-[10px] flex items-center gap-0.5"
                     >
                       <Plus className="w-3 h-3" />
                       <span>Add</span>
@@ -349,7 +341,7 @@ export const CalendarView: React.FC<Props> = ({
                   </div>
 
                   {dayTasks.length === 0 ? (
-                    <div className="text-center py-8 text-neutral-300 dark:text-neutral-700 text-xs">
+                    <div className="text-center py-8 text-[#b8b6b1] dark:text-neutral-700 text-xs">
                       No deadlines
                     </div>
                   ) : (
@@ -357,7 +349,7 @@ export const CalendarView: React.FC<Props> = ({
                       <div
                         key={task.id}
                         onClick={() => onSelectTask(task)}
-                        className={`p-2 rounded-lg border text-xs cursor-pointer shadow-2xs hover:scale-[1.01] transition-all space-y-1 ${getSourceColor(
+                        className={`p-2 rounded-lg border text-xs cursor-pointer shadow-2xs hover:opacity-85 transition-all space-y-1 ${getSourceColor(
                           task.source
                         )}`}
                       >
@@ -370,11 +362,11 @@ export const CalendarView: React.FC<Props> = ({
                           </span>
                           <span className="capitalize">{task.priority}</span>
                         </div>
-                        <div className="font-semibold text-neutral-900 dark:text-neutral-100 truncate">
+                        <div className="font-semibold text-[#37352f] dark:text-neutral-100 truncate">
                           {task.title}
                         </div>
                         {(task.courseCode || task.courseName) && (
-                          <div className="text-[10px] text-neutral-500 truncate">
+                          <div className="text-[10px] text-[#787774] dark:text-neutral-400 truncate">
                             {task.courseCode || task.courseName}
                           </div>
                         )}

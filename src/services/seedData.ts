@@ -63,6 +63,7 @@ export const INITIAL_CLASSROOM_COURSES: ClassroomCourse[] = [
 ];
 
 export const INITIAL_SETTINGS: IntegrationSettings = {
+  theme: 'light',
   moodle: {
     connected: true,
     instanceUrl: 'https://moodle.university.edu',
