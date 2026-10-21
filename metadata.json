@@ -1,0 +1,6 @@
+{
+  "name": "Calen - Notion-Inspired Unified Calendar & Task Hub",
+  "description": "Minimalist, distraction-free calendar and master task list with live sync for Google Classroom, Notion, Trello, and Moodle.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
