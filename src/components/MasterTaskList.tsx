@@ -48,7 +48,6 @@ export const MasterTaskList: React.FC<Props> = ({
 
   // Filter tasks
   const filteredTasks = tasks.filter((task) => {
-    // Search
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       const matchTitle = task.title.toLowerCase().includes(q);
@@ -61,17 +60,14 @@ export const MasterTaskList: React.FC<Props> = ({
       }
     }
 
-    // Source filter
     if (selectedSource !== 'all' && task.source !== selectedSource) {
       return false;
     }
 
-    // Priority filter
     if (priorityFilter !== 'all' && task.priority !== priorityFilter) {
       return false;
     }
 
-    // Status filter
     if (statusFilter === 'pending' && task.status === 'completed') return false;
     if (statusFilter === 'completed' && task.status !== 'completed') return false;
     if (statusFilter === 'today') {
@@ -164,18 +160,42 @@ export const MasterTaskList: React.FC<Props> = ({
     }
   };
 
-  // Priority edge strip color helper for table rows
+  // Subtle left border indicator for priority
   const getPriorityLeftBorder = (priority: TaskPriority) => {
     switch (priority) {
       case 'urgent':
-        return 'border-l-3 border-l-[#cf6666] bg-[#faebeb]/15';
+        return 'border-l-[3px] border-l-[#d67a7a] dark:border-l-[#b85656]';
       case 'high':
-        return 'border-l-3 border-l-[#d67b45] bg-[#faf0e8]/10';
+        return 'border-l-[3px] border-l-[#de9366] dark:border-l-[#ba7247]';
       case 'medium':
-        return 'border-l-3 border-l-[#d4b14e] bg-[#fbf5e5]/10';
+        return 'border-l-[3px] border-l-[#dbc06b] dark:border-l-[#b09644]';
       case 'low':
       default:
-        return 'border-l-3 border-l-transparent';
+        return 'border-l-[3px] border-l-transparent';
+    }
+  };
+
+  const getStatusBadgeStyle = (status: TaskStatus) => {
+    switch (status) {
+      case 'completed':
+        return 'bg-[#eef4ee] text-[#2d5c41] border-[#d7e5d6] dark:bg-[#1a2820] dark:text-[#9ed1b2] dark:border-[#294233]';
+      case 'in_progress':
+        return 'bg-[#edf4f9] text-[#275c7d] border-[#d0e2ee] dark:bg-[#1a2631] dark:text-[#a2cde8] dark:border-[#293d4d]';
+      case 'todo':
+      default:
+        return 'bg-[#f2f1ef] text-[#5e5c59] border-[#e0deda] dark:bg-[#262626] dark:text-[#c2c0bc] dark:border-[#383838]';
+    }
+  };
+
+  const getStatusLabel = (status: TaskStatus) => {
+    switch (status) {
+      case 'completed':
+        return 'Completed';
+      case 'in_progress':
+        return 'In Progress';
+      case 'todo':
+      default:
+        return 'To Do';
     }
   };
 
@@ -197,10 +217,38 @@ export const MasterTaskList: React.FC<Props> = ({
   ];
 
   const priorityGroups: { key: TaskPriority; label: string; desc: string; icon: typeof Flame; bg: string; count: number }[] = [
-    { key: 'urgent', label: 'Urgent Priority', desc: 'Critical cutoff deadlines & overdue submissions', icon: Flame, bg: 'bg-[#faebeb] text-[#9c3434] border-[#f4cccc]', count: tasks.filter((t) => t.priority === 'urgent').length },
-    { key: 'high', label: 'High Priority', desc: 'Upcoming major exams, projects & problem sets', icon: ArrowUp, bg: 'bg-[#faf0e8] text-[#944e1c] border-[#f1dac9]', count: tasks.filter((t) => t.priority === 'high').length },
-    { key: 'medium', label: 'Medium Priority', desc: 'Regular homework, readings & ongoing coursework', icon: Minus, bg: 'bg-[#fbf5e5] text-[#7d5d14] border-[#f0e3bf]', count: tasks.filter((t) => t.priority === 'medium').length },
-    { key: 'low', label: 'Low Priority', desc: 'Long-term goals, reviews & optional reading', icon: ArrowDown, bg: 'bg-[#f2f1ef] text-[#5e5c59] border-[#e0deda]', count: tasks.filter((t) => t.priority === 'low').length },
+    {
+      key: 'urgent',
+      label: 'Urgent Priority',
+      desc: 'Critical cutoff deadlines & overdue submissions',
+      icon: Flame,
+      bg: 'bg-[#faebeb] text-[#9c3434] border-[#f4cccc] dark:bg-[#2b1919] dark:text-[#f29b9b] dark:border-[#482828]',
+      count: tasks.filter((t) => t.priority === 'urgent').length,
+    },
+    {
+      key: 'high',
+      label: 'High Priority',
+      desc: 'Upcoming major exams, projects & problem sets',
+      icon: ArrowUp,
+      bg: 'bg-[#faf0e8] text-[#944e1c] border-[#f1dac9] dark:bg-[#2a1c14] dark:text-[#f0ad7d] dark:border-[#483023]',
+      count: tasks.filter((t) => t.priority === 'high').length,
+    },
+    {
+      key: 'medium',
+      label: 'Medium Priority',
+      desc: 'Regular homework, readings & ongoing coursework',
+      icon: Minus,
+      bg: 'bg-[#fbf5e5] text-[#7d5d14] border-[#f0e3bf] dark:bg-[#292415] dark:text-[#e8c76b] dark:border-[#42391e]',
+      count: tasks.filter((t) => t.priority === 'medium').length,
+    },
+    {
+      key: 'low',
+      label: 'Low Priority',
+      desc: 'Long-term goals, reviews & optional reading',
+      icon: ArrowDown,
+      bg: 'bg-[#f2f1ef] text-[#5e5c59] border-[#e0deda] dark:bg-[#232322] dark:text-[#c4c2be] dark:border-[#383735]',
+      count: tasks.filter((t) => t.priority === 'low').length,
+    },
   ];
 
   const kanbanColumns: { status: TaskStatus; label: string }[] = [
@@ -211,109 +259,107 @@ export const MasterTaskList: React.FC<Props> = ({
 
   return (
     <div className="space-y-4 max-w-7xl mx-auto px-4 sm:px-6 py-6 animate-in fade-in">
-      {/* Title & Notion-like Database Controls */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-2 border-b border-[#e8e7e3] dark:border-neutral-800">
+      {/* Title & View Style Switcher */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-3 border-b border-[#e8e7e3] dark:border-[#2a2a2a]">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-[#37352f] dark:text-neutral-100 font-sans flex items-center gap-2.5">
-            <span>Master Task List</span>
-            <span className="text-xs font-normal text-[#787774] bg-[#f1f1ef] dark:bg-neutral-800 px-2.5 py-0.5 rounded-full border border-[#e5e4e0] dark:border-neutral-700">
+          <div className="flex items-center gap-2.5">
+            <h1 className="text-2xl font-bold tracking-tight text-[#37352f] dark:text-[#ececec]">
+              Master Task List
+            </h1>
+            <span className="text-xs font-medium text-[#787774] dark:text-[#a0a0a0] bg-[#f1f1ef] dark:bg-[#252525] px-2.5 py-0.5 rounded-full border border-[#e5e4e0] dark:border-[#333333] whitespace-nowrap">
               {tasks.length} total
             </span>
-          </h1>
-          <p className="text-xs text-[#787774] dark:text-neutral-400 mt-1">
+          </div>
+          <p className="text-xs text-[#787774] dark:text-[#9b9b9b] mt-1">
             Unified student assignments & tasks with visual priority badges to focus on what matters first
           </p>
         </div>
 
         {/* View Style Switcher */}
-        <div className="flex items-center gap-2 self-start md:self-auto">
-          <div className="flex items-center p-1 bg-[#f1f1ef] dark:bg-neutral-800 rounded-lg text-xs font-medium border border-[#e5e4e0] dark:border-neutral-700/60">
+        <div className="flex items-center gap-2 self-start md:self-auto shrink-0">
+          <div className="flex items-center p-1 bg-[#f1f1ef] dark:bg-[#242424] rounded-lg text-xs font-medium border border-[#e5e4e0] dark:border-[#333333]">
             <button
               onClick={() => setViewType('table')}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded transition-colors ${
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-colors whitespace-nowrap ${
                 viewType === 'table'
-                  ? 'bg-white dark:bg-neutral-900 text-[#37352f] dark:text-neutral-100 shadow-2xs font-semibold'
-                  : 'text-[#787774] hover:text-[#37352f] dark:hover:text-neutral-200'
+                  ? 'bg-white dark:bg-[#191919] text-[#37352f] dark:text-[#f0f0f0] shadow-2xs font-semibold'
+                  : 'text-[#787774] dark:text-[#9b9b9b] hover:text-[#37352f] dark:hover:text-[#e0e0e0]'
               }`}
-              title="Table view"
             >
-              <LayoutList className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Table</span>
+              <LayoutList className="w-3.5 h-3.5 shrink-0" />
+              <span>Table</span>
             </button>
 
             <button
               onClick={() => setViewType('by-priority')}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded transition-colors ${
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-colors whitespace-nowrap ${
                 viewType === 'by-priority'
-                  ? 'bg-white dark:bg-neutral-900 text-[#37352f] dark:text-neutral-100 shadow-2xs font-semibold'
-                  : 'text-[#787774] hover:text-[#37352f] dark:hover:text-neutral-200'
+                  ? 'bg-white dark:bg-[#191919] text-[#37352f] dark:text-[#f0f0f0] shadow-2xs font-semibold'
+                  : 'text-[#787774] dark:text-[#9b9b9b] hover:text-[#37352f] dark:hover:text-[#e0e0e0]'
               }`}
-              title="Grouped by priority level"
             >
-              <ListFilter className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">By Priority</span>
+              <ListFilter className="w-3.5 h-3.5 shrink-0" />
+              <span>By Priority</span>
             </button>
 
             <button
               onClick={() => setViewType('by-source')}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded transition-colors ${
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-colors whitespace-nowrap ${
                 viewType === 'by-source'
-                  ? 'bg-white dark:bg-neutral-900 text-[#37352f] dark:text-neutral-100 shadow-2xs font-semibold'
-                  : 'text-[#787774] hover:text-[#37352f] dark:hover:text-neutral-200'
+                  ? 'bg-white dark:bg-[#191919] text-[#37352f] dark:text-[#f0f0f0] shadow-2xs font-semibold'
+                  : 'text-[#787774] dark:text-[#9b9b9b] hover:text-[#37352f] dark:hover:text-[#e0e0e0]'
               }`}
-              title="Grouped by platform"
             >
-              <Layers className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">By Platform</span>
+              <Layers className="w-3.5 h-3.5 shrink-0" />
+              <span>By Platform</span>
             </button>
 
             <button
               onClick={() => setViewType('kanban')}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded transition-colors ${
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-colors whitespace-nowrap ${
                 viewType === 'kanban'
-                  ? 'bg-white dark:bg-neutral-900 text-[#37352f] dark:text-neutral-100 shadow-2xs font-semibold'
-                  : 'text-[#787774] hover:text-[#37352f] dark:hover:text-neutral-200'
+                  ? 'bg-white dark:bg-[#191919] text-[#37352f] dark:text-[#f0f0f0] shadow-2xs font-semibold'
+                  : 'text-[#787774] dark:text-[#9b9b9b] hover:text-[#37352f] dark:hover:text-[#e0e0e0]'
               }`}
-              title="Kanban board"
             >
-              <Columns3 className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Board</span>
+              <Columns3 className="w-3.5 h-3.5 shrink-0" />
+              <span>Board</span>
             </button>
           </div>
         </div>
       </div>
 
-      {/* PRIORITY FOCUS PILLS (Subtle colored badges for students) */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs select-none">
-        <span className="text-[#9c9a95] font-medium text-[11px] uppercase tracking-wider shrink-0 mr-1 flex items-center gap-1">
+      {/* PRIORITY FOCUS PILLS (Clean, harmonious in both Light and Dark modes) */}
+      <div className="flex items-center gap-2 overflow-x-auto py-0.5 text-xs select-none">
+        <span className="text-[#8e8b86] dark:text-[#8a8a8a] font-medium text-[11px] uppercase tracking-wider shrink-0 mr-1">
           Priority Focus:
         </span>
 
         {/* All Priorities Button */}
         <button
           onClick={() => setPriorityFilter('all')}
-          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-medium transition-all ${
+          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-medium transition-all whitespace-nowrap ${
             priorityFilter === 'all'
-              ? 'bg-white dark:bg-neutral-800 text-[#37352f] dark:text-neutral-100 border-[#b4b2ac] shadow-2xs font-semibold'
-              : 'bg-[#faf9f7] dark:bg-neutral-900 text-[#787774] border-[#e5e4e0] dark:border-neutral-800 hover:text-[#37352f]'
+              ? 'bg-white dark:bg-[#262626] text-[#37352f] dark:text-[#f0f0f0] border-[#b4b2ac] dark:border-[#525252] shadow-2xs font-semibold'
+              : 'bg-[#f5f4f2] dark:bg-[#1e1e1e] text-[#787774] dark:text-[#9b9b9b] border-[#e5e4e0] dark:border-[#2e2e2e] hover:text-[#37352f] dark:hover:text-[#e0e0e0]'
           }`}
         >
           <span>All Levels</span>
-          <span className="text-[10px] text-[#9c9a95]">({countsByPriority.all})</span>
+          <span className="text-[11px] opacity-70">{countsByPriority.all}</span>
         </button>
 
         {/* Urgent Badge */}
         <button
           onClick={() => setPriorityFilter(priorityFilter === 'urgent' ? 'all' : 'urgent')}
-          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-medium transition-all ${
+          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-medium transition-all whitespace-nowrap ${
             priorityFilter === 'urgent'
-              ? 'ring-1.5 ring-[#cf6666] bg-[#faebeb] text-[#9c3434] border-[#f4cccc] font-semibold shadow-2xs'
-              : 'bg-[#faebeb]/60 text-[#9c3434] border-[#f4cccc]/70 hover:bg-[#faebeb]'
+              ? 'bg-[#faebeb] text-[#9c3434] border-[#d67a7a] dark:bg-[#361e1e] dark:text-[#f5a3a3] dark:border-[#8c4646] font-semibold shadow-2xs'
+              : 'bg-[#faebeb]/80 text-[#9c3434] border-[#f4cccc] dark:bg-[#261717] dark:text-[#e08b8b] dark:border-[#3d2323] hover:opacity-95'
           }`}
         >
-          <Flame className="w-3 h-3 text-[#9c3434]" />
+          <Flame className="w-3 h-3 shrink-0 opacity-85" />
           <span>Urgent</span>
-          <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-[#f4cccc] text-[#7d2222] font-semibold">
+          <span className="text-[10px] px-1.5 rounded bg-[#f2d5d5] dark:bg-[#422525] text-[#822727] dark:text-[#f5b5b5] font-semibold">
             {countsByPriority.urgent}
           </span>
         </button>
@@ -321,15 +367,15 @@ export const MasterTaskList: React.FC<Props> = ({
         {/* High Badge */}
         <button
           onClick={() => setPriorityFilter(priorityFilter === 'high' ? 'all' : 'high')}
-          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-medium transition-all ${
+          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-medium transition-all whitespace-nowrap ${
             priorityFilter === 'high'
-              ? 'ring-1.5 ring-[#d67b45] bg-[#faf0e8] text-[#944e1c] border-[#f1dac9] font-semibold shadow-2xs'
-              : 'bg-[#faf0e8]/60 text-[#944e1c] border-[#f1dac9]/70 hover:bg-[#faf0e8]'
+              ? 'bg-[#faf0e8] text-[#944e1c] border-[#de9366] dark:bg-[#332218] dark:text-[#f2b68a] dark:border-[#875637] font-semibold shadow-2xs'
+              : 'bg-[#faf0e8]/80 text-[#944e1c] border-[#f1dac9] dark:bg-[#241812] dark:text-[#de9f73] dark:border-[#3b271c] hover:opacity-95'
           }`}
         >
-          <ArrowUp className="w-3 h-3 text-[#944e1c]" />
+          <ArrowUp className="w-3 h-3 shrink-0 opacity-85" />
           <span>High</span>
-          <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-[#f1dac9] text-[#783c13] font-semibold">
+          <span className="text-[10px] px-1.5 rounded bg-[#f0d9c7] dark:bg-[#3d291e] text-[#783c13] dark:text-[#f5c4a1] font-semibold">
             {countsByPriority.high}
           </span>
         </button>
@@ -337,15 +383,15 @@ export const MasterTaskList: React.FC<Props> = ({
         {/* Medium Badge */}
         <button
           onClick={() => setPriorityFilter(priorityFilter === 'medium' ? 'all' : 'medium')}
-          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-medium transition-all ${
+          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-medium transition-all whitespace-nowrap ${
             priorityFilter === 'medium'
-              ? 'ring-1.5 ring-[#d4b14e] bg-[#fbf5e5] text-[#7d5d14] border-[#f0e3bf] font-semibold shadow-2xs'
-              : 'bg-[#fbf5e5]/60 text-[#7d5d14] border-[#f0e3bf]/70 hover:bg-[#fbf5e5]'
+              ? 'bg-[#fbf5e5] text-[#7d5d14] border-[#d4b14e] dark:bg-[#302916] dark:text-[#ebd07a] dark:border-[#78652c] font-semibold shadow-2xs'
+              : 'bg-[#fbf5e5]/80 text-[#7d5d14] border-[#f0e3bf] dark:bg-[#241f12] dark:text-[#d6ba67] dark:border-[#38301a] hover:opacity-95'
           }`}
         >
-          <Minus className="w-3 h-3 text-[#7d5d14]" />
+          <Minus className="w-3 h-3 shrink-0 opacity-85" />
           <span>Medium</span>
-          <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-[#f0e3bf] text-[#63490f] font-semibold">
+          <span className="text-[10px] px-1.5 rounded bg-[#ede0ba] dark:bg-[#3b331c] text-[#63490f] dark:text-[#f0d98d] font-semibold">
             {countsByPriority.medium}
           </span>
         </button>
@@ -353,15 +399,15 @@ export const MasterTaskList: React.FC<Props> = ({
         {/* Low Badge */}
         <button
           onClick={() => setPriorityFilter(priorityFilter === 'low' ? 'all' : 'low')}
-          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-medium transition-all ${
+          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-medium transition-all whitespace-nowrap ${
             priorityFilter === 'low'
-              ? 'ring-1.5 ring-[#a3a099] bg-[#f2f1ef] text-[#5e5c59] border-[#e0deda] font-semibold shadow-2xs'
-              : 'bg-[#f2f1ef]/60 text-[#5e5c59] border-[#e0deda]/70 hover:bg-[#f2f1ef]'
+              ? 'bg-[#f2f1ef] text-[#5e5c59] border-[#a3a099] dark:bg-[#2c2c2a] dark:text-[#d9d7d2] dark:border-[#5e5d59] font-semibold shadow-2xs'
+              : 'bg-[#f2f1ef]/80 text-[#5e5c59] border-[#e0deda] dark:bg-[#212120] dark:text-[#b5b3ae] dark:border-[#333230] hover:opacity-95'
           }`}
         >
-          <ArrowDown className="w-3 h-3 text-[#5e5c59]" />
+          <ArrowDown className="w-3 h-3 shrink-0 opacity-85" />
           <span>Low</span>
-          <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-[#e0deda] text-[#454341] font-semibold">
+          <span className="text-[10px] px-1.5 rounded bg-[#e2e0dc] dark:bg-[#333330] text-[#454341] dark:text-[#d4d2ce] font-semibold">
             {countsByPriority.low}
           </span>
         </button>
@@ -370,8 +416,8 @@ export const MasterTaskList: React.FC<Props> = ({
       {/* Filter & Search Bar */}
       <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
         {/* Left: Search input */}
-        <div className="flex items-center gap-2 flex-1 min-w-[200px] max-w-md">
-          <div className="flex items-center w-full px-3 py-1.5 bg-white dark:bg-neutral-900 border border-[#e2e1dc] dark:border-neutral-800 rounded-lg text-[#37352f] dark:text-neutral-200 focus-within:border-[#b4b2ac]">
+        <div className="flex items-center gap-2 flex-1 min-w-[220px] max-w-md">
+          <div className="flex items-center w-full px-3 py-1.5 bg-white dark:bg-[#1e1e1e] border border-[#e2e1dc] dark:border-[#333333] rounded-lg text-[#37352f] dark:text-[#e0e0e0] focus-within:border-[#a8a6a0] dark:focus-within:border-[#555555]">
             <Search className="w-3.5 h-3.5 text-[#9c9a95] mr-2 shrink-0" />
             <input
               type="text"
@@ -389,7 +435,7 @@ export const MasterTaskList: React.FC<Props> = ({
           <select
             value={selectedSource}
             onChange={(e) => setSelectedSource(e.target.value)}
-            className="px-2.5 py-1.5 border border-[#e2e1dc] dark:border-neutral-800 rounded-lg bg-white dark:bg-neutral-900 text-[#474542] dark:text-neutral-300 focus:outline-none"
+            className="px-2.5 py-1.5 border border-[#e2e1dc] dark:border-[#333333] rounded-lg bg-white dark:bg-[#1e1e1e] text-[#474542] dark:text-[#d4d4d4] focus:outline-none cursor-pointer"
           >
             <option value="all">All Sources</option>
             <option value="moodle">Moodle</option>
@@ -400,15 +446,15 @@ export const MasterTaskList: React.FC<Props> = ({
           </select>
 
           {/* Status Filter */}
-          <div className="flex items-center rounded-lg border border-[#e2e1dc] dark:border-neutral-800 p-0.5 bg-[#fbfbfa] dark:bg-neutral-900">
+          <div className="flex items-center rounded-lg border border-[#e2e1dc] dark:border-[#333333] p-0.5 bg-[#f5f4f1] dark:bg-[#1e1e1e]">
             {(['all', 'pending', 'today', 'completed'] as const).map((s) => (
               <button
                 key={s}
                 onClick={() => setStatusFilter(s)}
-                className={`px-2 py-1 rounded capitalize transition-colors ${
+                className={`px-2.5 py-1 rounded-md capitalize transition-colors whitespace-nowrap ${
                   statusFilter === s
-                    ? 'bg-white dark:bg-neutral-800 font-semibold shadow-2xs text-[#37352f] dark:text-neutral-100'
-                    : 'text-[#787774] hover:text-[#37352f] dark:hover:text-neutral-200'
+                    ? 'bg-white dark:bg-[#2c2c2c] font-semibold shadow-2xs text-[#37352f] dark:text-[#f0f0f0]'
+                    : 'text-[#787774] dark:text-[#999999] hover:text-[#37352f] dark:hover:text-[#e0e0e0]'
                 }`}
               >
                 {s}
@@ -417,12 +463,12 @@ export const MasterTaskList: React.FC<Props> = ({
           </div>
 
           {/* Sort By */}
-          <div className="flex items-center border border-[#e2e1dc] dark:border-neutral-800 rounded-lg px-2.5 py-1.5 bg-white dark:bg-neutral-900 text-[#605e5a] dark:text-neutral-400 gap-1.5">
-            <ArrowUpDown className="w-3.5 h-3.5" />
+          <div className="flex items-center border border-[#e2e1dc] dark:border-[#333333] rounded-lg px-2.5 py-1.5 bg-white dark:bg-[#1e1e1e] text-[#605e5a] dark:text-[#c7c7c7] gap-1.5">
+            <ArrowUpDown className="w-3.5 h-3.5 shrink-0" />
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value as 'due' | 'priority' | 'title')}
-              className="bg-transparent focus:outline-none cursor-pointer"
+              className="bg-transparent focus:outline-none cursor-pointer dark:bg-[#1e1e1e]"
             >
               <option value="priority">Priority First</option>
               <option value="due">Earliest Due</option>
@@ -432,37 +478,37 @@ export const MasterTaskList: React.FC<Props> = ({
         </div>
       </div>
 
-      {/* Notion-Style Quick Add Line with Priority Selector */}
+      {/* Notion-Style Quick Add Line */}
       <form
         onSubmit={handleQuickAddSubmit}
-        className="flex items-center gap-2 p-2 bg-[#fbfbfa] dark:bg-neutral-900/40 rounded-lg border border-[#e5e4e0] dark:border-neutral-800 focus-within:border-[#b4b2ac] transition-colors text-xs flex-wrap sm:flex-nowrap"
+        className="flex items-center gap-2 p-2 bg-[#fbfbfa] dark:bg-[#1c1c1c] rounded-lg border border-[#e5e4e0] dark:border-[#2e2e2e] focus-within:border-[#b4b2ac] dark:focus-within:border-[#4a4a4a] transition-colors text-xs flex-wrap sm:flex-nowrap"
       >
         <Plus className="w-4 h-4 text-[#9c9a95] shrink-0 ml-1" />
         <input
           type="text"
           value={quickInputTitle}
           onChange={(e) => setQuickInputTitle(e.target.value)}
-          placeholder="+ Quick add a task or deadline and press Enter..."
-          className="flex-1 min-w-[150px] bg-transparent focus:outline-none placeholder-[#9c9a95] text-[#37352f] dark:text-neutral-200"
+          placeholder="Quick add a task or deadline and press Enter..."
+          className="flex-1 min-w-[160px] bg-transparent focus:outline-none placeholder-[#9c9a95] text-[#37352f] dark:text-[#e6e6e6]"
         />
 
-        {/* Priority dropdown in quick add */}
+        {/* Priority dropdown in quick add (no giant emojis) */}
         <select
           value={quickInputPriority}
           onChange={(e) => setQuickInputPriority(e.target.value as TaskPriority)}
-          className="bg-white dark:bg-neutral-800 border border-[#e2e1dc] dark:border-neutral-700 rounded px-2 py-1 text-[#474542] dark:text-neutral-300 focus:outline-none"
+          className="bg-white dark:bg-[#262626] border border-[#e2e1dc] dark:border-[#383838] rounded-md px-2.5 py-1 text-[#474542] dark:text-[#d4d4d4] focus:outline-none cursor-pointer"
         >
-          <option value="urgent">🔴 Urgent</option>
-          <option value="high">🟠 High</option>
-          <option value="medium">🟡 Medium</option>
-          <option value="low">⚪ Low</option>
+          <option value="urgent">Priority: Urgent</option>
+          <option value="high">Priority: High</option>
+          <option value="medium">Priority: Medium</option>
+          <option value="low">Priority: Low</option>
         </select>
 
         {/* Source selector */}
         <select
           value={quickInputSource}
           onChange={(e) => setQuickInputSource(e.target.value as TaskSource)}
-          className="bg-white dark:bg-neutral-800 border border-[#e2e1dc] dark:border-neutral-700 rounded px-2 py-1 text-[#474542] dark:text-neutral-300 focus:outline-none"
+          className="bg-white dark:bg-[#262626] border border-[#e2e1dc] dark:border-[#383838] rounded-md px-2.5 py-1 text-[#474542] dark:text-[#d4d4d4] focus:outline-none cursor-pointer"
         >
           <option value="personal">Personal</option>
           <option value="moodle">Moodle</option>
@@ -474,29 +520,29 @@ export const MasterTaskList: React.FC<Props> = ({
         <button
           type="submit"
           disabled={!quickInputTitle.trim()}
-          className="px-3 py-1 bg-[#37352f] hover:bg-[#272623] dark:bg-neutral-100 dark:hover:bg-white text-white dark:text-neutral-900 rounded font-medium disabled:opacity-40 transition-opacity"
+          className="px-3.5 py-1 bg-[#37352f] hover:bg-[#272623] dark:bg-[#e6e6e6] dark:hover:bg-white text-white dark:text-[#191919] rounded-md font-medium disabled:opacity-40 transition-opacity whitespace-nowrap"
         >
           Add
         </button>
       </form>
 
-      {/* VIEW TYPE 1: NOTION DATABASE TABLE WITH PRIORITY INDICATORS */}
+      {/* VIEW TYPE 1: NOTION DATABASE TABLE */}
       {viewType === 'table' && (
-        <div className="border border-[#e5e4e0] dark:border-neutral-800 rounded-xl overflow-hidden bg-white dark:bg-[#181818] shadow-2xs">
+        <div className="border border-[#e5e4e0] dark:border-[#2a2a2a] rounded-xl overflow-hidden bg-white dark:bg-[#191919] shadow-2xs">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs border-collapse">
               <thead>
-                <tr className="border-b border-[#e8e7e3] dark:border-neutral-800 bg-[#fbfbfa] dark:bg-neutral-900/60 text-[#787774] select-none">
+                <tr className="border-b border-[#e8e7e3] dark:border-[#2a2a2a] bg-[#fbfbfa] dark:bg-[#202020] text-[#787774] dark:text-[#999999] select-none">
                   <th className="py-2.5 px-3 w-10 text-center font-medium"></th>
-                  <th className="py-2.5 px-3 font-medium min-w-[240px]">Task / Assignment Title</th>
-                  <th className="py-2.5 px-3 font-medium min-w-[130px]">Priority</th>
-                  <th className="py-2.5 px-3 font-medium min-w-[140px]">Platform / Course</th>
-                  <th className="py-2.5 px-3 font-medium min-w-[140px]">Due Date & Time</th>
-                  <th className="py-2.5 px-3 font-medium min-w-[90px]">Status</th>
-                  <th className="py-2.5 px-3 font-medium text-right w-16">Link</th>
+                  <th className="py-2.5 px-3 font-medium min-w-[280px]">Task / Assignment Title</th>
+                  <th className="py-2.5 px-3 font-medium w-[110px] whitespace-nowrap">Priority</th>
+                  <th className="py-2.5 px-3 font-medium w-[160px] whitespace-nowrap">Platform / Course</th>
+                  <th className="py-2.5 px-3 font-medium w-[170px] whitespace-nowrap">Due Date & Time</th>
+                  <th className="py-2.5 px-3 font-medium w-[110px] whitespace-nowrap">Status</th>
+                  <th className="py-2.5 px-3 font-medium text-right w-14 whitespace-nowrap">Link</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#ecebe7] dark:divide-neutral-800/80">
+              <tbody className="divide-y divide-[#ecebe7] dark:divide-[#262626]">
                 {sortedTasks.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="py-12 text-center text-[#9c9a95]">
@@ -515,46 +561,46 @@ export const MasterTaskList: React.FC<Props> = ({
                       <tr
                         key={task.id}
                         onClick={() => onSelectTask(task)}
-                        className={`group cursor-pointer hover:bg-[#fbfbfa] dark:hover:bg-neutral-800/40 transition-colors ${getPriorityLeftBorder(
+                        className={`group cursor-pointer hover:bg-[#f9f8f6] dark:hover:bg-[#222222] transition-colors ${getPriorityLeftBorder(
                           task.priority
-                        )} ${isDone ? 'opacity-55 bg-[#faf9f7] dark:bg-neutral-900/20' : ''}`}
+                        )} ${isDone ? 'opacity-50 bg-[#faf9f7]/60 dark:bg-[#161616]' : ''}`}
                       >
                         {/* Checkbox */}
                         <td className="py-3 px-3 text-center" onClick={(e) => handleToggleTaskStatus(task, e)}>
                           <button
                             type="button"
-                            className="p-0.5 text-[#9c9a95] hover:text-[#37352f] dark:hover:text-neutral-200 transition-colors"
+                            className="p-0.5 text-[#9c9a95] hover:text-[#37352f] dark:hover:text-neutral-200 transition-colors flex items-center justify-center mx-auto"
                           >
                             {isDone ? (
-                              <CheckCircle2 className="w-4 h-4 text-[#2d5c41] fill-[#eef4ee] dark:fill-[#1a2920]" />
+                              <CheckCircle2 className="w-4 h-4 text-[#2d5c41] dark:text-[#7eb897]" />
                             ) : (
-                              <Circle className="w-4 h-4 text-[#c4c2be] dark:text-neutral-600 hover:text-[#787774]" />
+                              <Circle className="w-4 h-4 text-[#c4c2be] dark:text-[#555555] hover:text-[#787774]" />
                             )}
                           </button>
                         </td>
 
                         {/* Title */}
                         <td className="py-3 px-3">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center justify-between gap-3">
                             <span
-                              className={`font-medium ${
+                              className={`font-medium leading-snug ${
                                 isDone
-                                  ? 'line-through text-[#9c9a95] dark:text-neutral-500'
-                                  : 'text-[#37352f] dark:text-neutral-100'
+                                  ? 'line-through text-[#9c9a95] dark:text-[#666666]'
+                                  : 'text-[#37352f] dark:text-[#ececec]'
                               }`}
                             >
                               {task.title}
                             </span>
                             {task.checklist && task.checklist.length > 0 && (
-                              <span className="text-[10px] text-[#787774] bg-[#f1f1ef] dark:bg-neutral-800 px-1.5 py-0.2 rounded font-mono">
+                              <span className="text-[10px] text-[#787774] dark:text-[#999999] bg-[#f1f1ef] dark:bg-[#2a2a2a] px-1.5 py-0.5 rounded border border-[#e5e4e0] dark:border-[#383838] font-mono shrink-0">
                                 {task.checklist.filter((c) => c.done).length}/{task.checklist.length}
                               </span>
                             )}
                           </div>
                         </td>
 
-                        {/* Priority Badge with Interactive Click-to-Cycle */}
-                        <td className="py-3 px-3">
+                        {/* Priority Badge */}
+                        <td className="py-3 px-3 whitespace-nowrap">
                           <PriorityBadge
                             priority={task.priority}
                             size="sm"
@@ -564,7 +610,7 @@ export const MasterTaskList: React.FC<Props> = ({
                         </td>
 
                         {/* Platform / Course Badge */}
-                        <td className="py-3 px-3">
+                        <td className="py-3 px-3 whitespace-nowrap">
                           <SourceBadge
                             source={task.source}
                             courseName={task.courseName}
@@ -573,59 +619,55 @@ export const MasterTaskList: React.FC<Props> = ({
                           />
                         </td>
 
-                        {/* Due Date */}
-                        <td className="py-3 px-3">
-                          <div className="flex items-center gap-1.5">
+                        {/* Due Date (Single line nowrap) */}
+                        <td className="py-3 px-3 whitespace-nowrap">
+                          <div className="inline-flex items-center gap-1.5 whitespace-nowrap">
                             <Calendar className="w-3.5 h-3.5 text-[#9c9a95] shrink-0" />
                             <span
-                              className={`font-mono text-xs ${
+                              className={`font-mono text-xs whitespace-nowrap ${
                                 isOverdue
                                   ? 'text-[#9c3434] dark:text-[#f29b9b] font-semibold'
                                   : isDueToday
                                   ? 'text-[#8a4e1d] dark:text-[#f0b58a] font-medium'
-                                  : 'text-[#605e5a] dark:text-neutral-400'
+                                  : 'text-[#605e5a] dark:text-[#a8a8a8]'
                               }`}
                             >
                               {formatDueDateDisplay(task.dueDate)}
                             </span>
                             {isOverdue && (
-                              <span className="text-[10px] bg-[#faebeb] text-[#9c3434] border border-[#f4cccc] dark:bg-[#2b1919] dark:text-[#f29b9b] dark:border-[#482828] px-1 rounded font-semibold">
+                              <span className="text-[10px] bg-[#faebeb] text-[#9c3434] border border-[#f4cccc] dark:bg-[#2b1919] dark:text-[#f29b9b] dark:border-[#482828] px-1.5 py-0.2 rounded font-semibold whitespace-nowrap">
                                 Late
                               </span>
                             )}
                           </div>
                         </td>
 
-                        {/* Status */}
-                        <td className="py-3 px-3">
+                        {/* Status (Single line nowrap) */}
+                        <td className="py-3 px-3 whitespace-nowrap">
                           <span
-                            className={`px-2 py-0.5 rounded-md text-[11px] font-medium capitalize border ${
-                              task.status === 'completed'
-                                ? 'bg-[#eef4ee] text-[#2d5c41] border-[#d7e5d6]'
-                                : task.status === 'in_progress'
-                                ? 'bg-[#edf4f9] text-[#275c7d] border-[#d0e2ee]'
-                                : 'bg-[#f2f1ef] text-[#5e5c59] border-[#e0deda]'
-                            }`}
+                            className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium border whitespace-nowrap ${getStatusBadgeStyle(
+                              task.status
+                            )}`}
                           >
-                            {task.status.replace('_', ' ')}
+                            {getStatusLabel(task.status)}
                           </span>
                         </td>
 
                         {/* External link */}
-                        <td className="py-3 px-3 text-right">
+                        <td className="py-3 px-3 text-right whitespace-nowrap">
                           {task.externalUrl ? (
                             <a
                               href={task.externalUrl}
                               target="_blank"
                               rel="noreferrer"
                               onClick={(e) => e.stopPropagation()}
-                              className="p-1 inline-flex text-[#9c9a95] hover:text-[#37352f] dark:hover:text-neutral-200 transition-colors"
+                              className="p-1 inline-flex text-[#9c9a95] hover:text-[#37352f] dark:hover:text-[#ececec] transition-colors"
                               title="Open original assignment"
                             >
                               <ExternalLink className="w-3.5 h-3.5" />
                             </a>
                           ) : (
-                            <span className="text-[#dedcd7] dark:text-neutral-700">-</span>
+                            <span className="text-[#dedcd7] dark:text-[#444444]">-</span>
                           )}
                         </td>
                       </tr>
@@ -638,9 +680,9 @@ export const MasterTaskList: React.FC<Props> = ({
         </div>
       )}
 
-      {/* VIEW TYPE 2: GROUPED BY PRIORITY (Focus view for students) */}
+      {/* VIEW TYPE 2: GROUPED BY PRIORITY */}
       {viewType === 'by-priority' && (
-        <div className="space-y-6">
+        <div className="space-y-5">
           {priorityGroups.map((group) => {
             const groupTasks = sortedTasks.filter((t) => t.priority === group.key);
             if (groupTasks.length === 0 && priorityFilter !== 'all') return null;
@@ -650,26 +692,26 @@ export const MasterTaskList: React.FC<Props> = ({
             return (
               <div
                 key={group.key}
-                className="border border-[#e5e4e0] dark:border-neutral-800 rounded-xl overflow-hidden bg-white dark:bg-[#181818]"
+                className="border border-[#e5e4e0] dark:border-[#2a2a2a] rounded-xl overflow-hidden bg-white dark:bg-[#191919]"
               >
                 {/* Header */}
-                <div className="flex items-center justify-between px-4 py-3 bg-[#fbfbfa] dark:bg-neutral-900/60 border-b border-[#e8e7e3] dark:border-neutral-800">
+                <div className="flex items-center justify-between px-4 py-3 bg-[#fbfbfa] dark:bg-[#202020] border-b border-[#e8e7e3] dark:border-[#2a2a2a]">
                   <div className="flex items-center gap-2.5">
-                    <span className={`p-1 rounded-md border text-xs font-semibold flex items-center gap-1 ${group.bg}`}>
+                    <span className={`px-2 py-0.5 rounded-md border text-xs font-semibold inline-flex items-center gap-1.5 ${group.bg}`}>
                       <Icon className="w-3.5 h-3.5" />
                       <span>{group.label}</span>
                     </span>
-                    <span className="text-xs text-[#787774] hidden sm:inline">
+                    <span className="text-xs text-[#787774] dark:text-[#999999] hidden sm:inline">
                       — {group.desc}
                     </span>
                   </div>
-                  <span className="text-[11px] font-mono text-[#787774] font-medium">
+                  <span className="text-[11px] font-mono text-[#787774] dark:text-[#999999] font-medium whitespace-nowrap">
                     {groupTasks.length} task{groupTasks.length === 1 ? '' : 's'}
                   </span>
                 </div>
 
                 {/* Tasks List */}
-                <div className="divide-y divide-[#ecebe7] dark:divide-neutral-800/80 text-xs">
+                <div className="divide-y divide-[#ecebe7] dark:divide-[#262626] text-xs">
                   {groupTasks.length === 0 ? (
                     <div className="p-4 text-center text-[#9c9a95]">
                       No tasks assigned to {group.label}.
@@ -681,45 +723,45 @@ export const MasterTaskList: React.FC<Props> = ({
                         <div
                           key={task.id}
                           onClick={() => onSelectTask(task)}
-                          className={`flex items-center justify-between p-3 hover:bg-[#fbfbfa] dark:hover:bg-neutral-800/40 cursor-pointer transition-colors ${getPriorityLeftBorder(
+                          className={`flex items-center justify-between gap-4 p-3 hover:bg-[#f9f8f6] dark:hover:bg-[#222222] cursor-pointer transition-colors ${getPriorityLeftBorder(
                             task.priority
                           )}`}
                         >
-                          <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-3 min-w-0">
                             <button
                               onClick={(e) => handleToggleTaskStatus(task, e)}
-                              className="text-[#9c9a95] hover:text-[#37352f]"
+                              className="text-[#9c9a95] hover:text-[#37352f] shrink-0"
                             >
                               {isDone ? (
-                                <CheckCircle2 className="w-4 h-4 text-[#2d5c41]" />
+                                <CheckCircle2 className="w-4 h-4 text-[#2d5c41] dark:text-[#7eb897]" />
                               ) : (
-                                <Circle className="w-4 h-4 text-[#c4c2be]" />
+                                <Circle className="w-4 h-4 text-[#c4c2be] dark:text-[#555555]" />
                               )}
                             </button>
-                            <div>
+                            <div className="min-w-0">
                               <div
-                                className={`font-medium ${
-                                  isDone ? 'line-through text-[#9c9a95]' : 'text-[#37352f] dark:text-neutral-100'
+                                className={`font-medium truncate ${
+                                  isDone ? 'line-through text-[#9c9a95]' : 'text-[#37352f] dark:text-[#ececec]'
                                 }`}
                               >
                                 {task.title}
                               </div>
                               {task.courseName && (
-                                <div className="text-[11px] text-[#787774]">
+                                <div className="text-[11px] text-[#787774] dark:text-[#999999] truncate">
                                   {task.courseName} {task.moduleName ? `• ${task.moduleName}` : ''}
                                 </div>
                               )}
                             </div>
                           </div>
 
-                          <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-3 shrink-0">
                             <SourceBadge
                               source={task.source}
                               courseName={task.courseName}
                               courseCode={task.courseCode}
                               size="sm"
                             />
-                            <span className="font-mono text-[#787774] text-xs">
+                            <span className="font-mono text-[#787774] dark:text-[#a0a0a0] text-xs whitespace-nowrap">
                               {formatDueDateDisplay(task.dueDate)}
                             </span>
                           </div>
@@ -736,7 +778,7 @@ export const MasterTaskList: React.FC<Props> = ({
 
       {/* VIEW TYPE 3: GROUPED BY SOURCE */}
       {viewType === 'by-source' && (
-        <div className="space-y-6">
+        <div className="space-y-5">
           {sourceGroups.map((group) => {
             const groupTasks = sortedTasks.filter((t) => t.source === group.key);
             if (groupTasks.length === 0 && selectedSource !== 'all') return null;
@@ -744,13 +786,13 @@ export const MasterTaskList: React.FC<Props> = ({
             return (
               <div
                 key={group.key}
-                className="border border-[#e5e4e0] dark:border-neutral-800 rounded-xl overflow-hidden bg-white dark:bg-[#181818]"
+                className="border border-[#e5e4e0] dark:border-[#2a2a2a] rounded-xl overflow-hidden bg-white dark:bg-[#191919]"
               >
                 {/* Header */}
-                <div className="flex items-center justify-between px-4 py-3 bg-[#fbfbfa] dark:bg-neutral-900/60 border-b border-[#e8e7e3] dark:border-neutral-800">
+                <div className="flex items-center justify-between px-4 py-3 bg-[#fbfbfa] dark:bg-[#202020] border-b border-[#e8e7e3] dark:border-[#2a2a2a]">
                   <div className="flex items-center gap-2">
                     <SourceBadge source={group.key} showCourse={false} size="sm" />
-                    <span className="font-semibold text-[#37352f] dark:text-neutral-200 text-xs">
+                    <span className="font-semibold text-[#37352f] dark:text-[#ececec] text-xs">
                       {group.label}
                     </span>
                     <span className="text-[11px] text-[#787774]">({groupTasks.length})</span>
@@ -758,7 +800,7 @@ export const MasterTaskList: React.FC<Props> = ({
                 </div>
 
                 {/* Tasks List */}
-                <div className="divide-y divide-[#ecebe7] dark:divide-neutral-800/80 text-xs">
+                <div className="divide-y divide-[#ecebe7] dark:divide-[#262626] text-xs">
                   {groupTasks.length === 0 ? (
                     <div className="p-4 text-center text-[#9c9a95]">
                       No active tasks from {group.label}.
@@ -770,37 +812,37 @@ export const MasterTaskList: React.FC<Props> = ({
                         <div
                           key={task.id}
                           onClick={() => onSelectTask(task)}
-                          className="flex items-center justify-between p-3 hover:bg-[#fbfbfa] dark:hover:bg-neutral-800/40 cursor-pointer transition-colors"
+                          className="flex items-center justify-between gap-4 p-3 hover:bg-[#f9f8f6] dark:hover:bg-[#222222] cursor-pointer transition-colors"
                         >
-                          <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-3 min-w-0">
                             <button
                               onClick={(e) => handleToggleTaskStatus(task, e)}
-                              className="text-[#9c9a95] hover:text-[#37352f]"
+                              className="text-[#9c9a95] hover:text-[#37352f] shrink-0"
                             >
                               {isDone ? (
-                                <CheckCircle2 className="w-4 h-4 text-[#2d5c41]" />
+                                <CheckCircle2 className="w-4 h-4 text-[#2d5c41] dark:text-[#7eb897]" />
                               ) : (
-                                <Circle className="w-4 h-4 text-[#c4c2be]" />
+                                <Circle className="w-4 h-4 text-[#c4c2be] dark:text-[#555555]" />
                               )}
                             </button>
-                            <div>
+                            <div className="min-w-0">
                               <div
-                                className={`font-medium ${
-                                  isDone ? 'line-through text-[#9c9a95]' : 'text-[#37352f] dark:text-neutral-100'
+                                className={`font-medium truncate ${
+                                  isDone ? 'line-through text-[#9c9a95]' : 'text-[#37352f] dark:text-[#ececec]'
                                 }`}
                               >
                                 {task.title}
                               </div>
                               {task.courseName && (
-                                <div className="text-[11px] text-[#787774]">
+                                <div className="text-[11px] text-[#787774] dark:text-[#999999] truncate">
                                   {task.courseName} {task.moduleName ? `• ${task.moduleName}` : ''}
                                 </div>
                               )}
                             </div>
                           </div>
 
-                          <div className="flex items-center gap-3">
-                            <span className="font-mono text-[#787774] text-xs">
+                          <div className="flex items-center gap-3 shrink-0">
+                            <span className="font-mono text-[#787774] dark:text-[#a0a0a0] text-xs whitespace-nowrap">
                               {formatDueDateDisplay(task.dueDate)}
                             </span>
                             <PriorityBadge priority={task.priority} size="sm" />
@@ -824,10 +866,10 @@ export const MasterTaskList: React.FC<Props> = ({
             return (
               <div
                 key={col.status}
-                className="bg-[#faf9f7] dark:bg-[#171717] rounded-xl border border-[#e5e4e0] dark:border-neutral-800 p-3 flex flex-col min-h-[500px]"
+                className="bg-[#faf9f7] dark:bg-[#191919] rounded-xl border border-[#e5e4e0] dark:border-[#2a2a2a] p-3 flex flex-col min-h-[500px]"
               >
                 {/* Column header */}
-                <div className="flex items-center justify-between pb-3 mb-2 border-b border-[#e8e7e3] dark:border-neutral-800 text-xs">
+                <div className="flex items-center justify-between pb-3 mb-2 border-b border-[#e8e7e3] dark:border-[#2a2a2a] text-xs">
                   <div className="flex items-center gap-2">
                     <span
                       className={`w-2 h-2 rounded-full ${
@@ -838,7 +880,7 @@ export const MasterTaskList: React.FC<Props> = ({
                           : 'bg-[#c4c2be]'
                       }`}
                     />
-                    <span className="font-semibold text-[#37352f] dark:text-neutral-200">
+                    <span className="font-semibold text-[#37352f] dark:text-[#ececec]">
                       {col.label}
                     </span>
                     <span className="text-[#9c9a95] text-[11px]">({colTasks.length})</span>
@@ -848,7 +890,7 @@ export const MasterTaskList: React.FC<Props> = ({
                 {/* Cards */}
                 <div className="space-y-2.5 flex-1 overflow-y-auto">
                   {colTasks.length === 0 ? (
-                    <div className="h-32 flex items-center justify-center text-[#9c9a95] text-xs border border-dashed border-[#e2e1dc] dark:border-neutral-800 rounded-lg">
+                    <div className="h-32 flex items-center justify-center text-[#9c9a95] text-xs border border-dashed border-[#e2e1dc] dark:border-[#2e2e2e] rounded-lg">
                       No tasks in {col.label}
                     </div>
                   ) : (
@@ -856,7 +898,7 @@ export const MasterTaskList: React.FC<Props> = ({
                       <div
                         key={task.id}
                         onClick={() => onSelectTask(task)}
-                        className={`p-3 bg-white dark:bg-[#202020] rounded-lg border border-[#e5e4e0] dark:border-neutral-700/80 shadow-2xs hover:border-[#b4b2ac] dark:hover:border-neutral-600 cursor-pointer transition-all hover:-translate-y-0.5 space-y-2 text-xs ${getPriorityLeftBorder(
+                        className={`p-3 bg-white dark:bg-[#222222] rounded-lg border border-[#e5e4e0] dark:border-[#333333] shadow-2xs hover:border-[#b4b2ac] dark:hover:border-[#555555] cursor-pointer transition-all hover:-translate-y-0.5 space-y-2 text-xs ${getPriorityLeftBorder(
                           task.priority
                         )}`}
                       >
@@ -870,13 +912,13 @@ export const MasterTaskList: React.FC<Props> = ({
                           <PriorityBadge priority={task.priority} size="sm" />
                         </div>
 
-                        <div className="font-medium text-[#37352f] dark:text-neutral-100 leading-snug">
+                        <div className="font-medium text-[#37352f] dark:text-[#ececec] leading-snug">
                           {task.title}
                         </div>
 
-                        <div className="flex items-center justify-between pt-1 border-t border-[#f1f1ef] dark:border-neutral-800 text-[11px] text-[#787774] font-mono">
-                          <div className="flex items-center gap-1">
-                            <Clock className="w-3 h-3 text-[#9c9a95]" />
+                        <div className="flex items-center justify-between pt-1 border-t border-[#f1f1ef] dark:border-[#2e2e2e] text-[11px] text-[#787774] dark:text-[#999999] font-mono">
+                          <div className="flex items-center gap-1 whitespace-nowrap">
+                            <Clock className="w-3 h-3 text-[#9c9a95] shrink-0" />
                             <span>{formatDueDateDisplay(task.dueDate)}</span>
                           </div>
                           {task.checklist && task.checklist.length > 0 && (

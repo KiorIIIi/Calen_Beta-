@@ -2,9 +2,7 @@ import { initializeApp } from 'firebase/app';
 import { 
   getAuth, 
   signInWithPopup, 
-  signInAnonymously,
   GoogleAuthProvider, 
-  onAuthStateChanged, 
   signOut, 
   User 
 } from 'firebase/auth';
@@ -40,6 +38,10 @@ export interface FirestoreErrorInfo {
     emailVerified?: boolean | null;
     isAnonymous?: boolean | null;
     tenantId?: string | null;
+    providerInfo?: {
+      providerId?: string | null;
+      email?: string | null;
+    }[];
   };
 }
 
@@ -57,6 +59,10 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
       emailVerified: auth.currentUser?.emailVerified,
       isAnonymous: auth.currentUser?.isAnonymous,
       tenantId: auth.currentUser?.tenantId,
+      providerInfo: auth.currentUser?.providerData?.map((provider) => ({
+        providerId: provider.providerId,
+        email: provider.email,
+      })) || [],
     },
     operationType,
     path,
@@ -72,13 +78,13 @@ export async function testConnection(): Promise<boolean> {
     return true;
   } catch (error) {
     if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.warn('Firebase client is offline, using local storage cache.');
+      console.warn('Please check your Firebase configuration.');
     }
     return false;
   }
 }
 
-// Auth methods
+// Auth methods (Google Sign-In only, as provisioned by Firebase)
 const googleProvider = new GoogleAuthProvider();
 
 export async function loginWithGoogle(): Promise<User | null> {
@@ -86,18 +92,7 @@ export async function loginWithGoogle(): Promise<User | null> {
     const res = await signInWithPopup(auth, googleProvider);
     return res.user;
   } catch (err) {
-    console.warn('Google sign-in popup fallback, trying anonymous session:', err);
-    const anon = await signInAnonymously(auth);
-    return anon.user;
-  }
-}
-
-export async function loginAnonymously(): Promise<User | null> {
-  try {
-    const res = await signInAnonymously(auth);
-    return res.user;
-  } catch (err) {
-    console.error('Anonymous sign-in failed:', err);
+    console.warn('Google sign-in popup closed or cancelled:', err);
     return null;
   }
 }
@@ -143,7 +138,6 @@ export function subscribeToUserTasks(
       onTasks(items);
     },
     (error) => {
-      console.warn('Tasks onSnapshot listener error:', error.message);
       if (onError) onError(error);
       handleFirestoreError(error, OperationType.LIST, path);
     }
@@ -155,11 +149,29 @@ export async function saveTaskToFirestore(userId: string, task: Task): Promise<v
   const path = `users/${userId}/tasks/${task.id}`;
   try {
     const taskDocRef = doc(db, 'users', userId, 'tasks', task.id);
-    await setDoc(taskDocRef, {
-      ...task,
+    // Clean undefined fields before saving to Firestore
+    const cleanTask: Record<string, unknown> = {
+      id: task.id,
+      title: task.title.slice(0, 300),
+      dueDate: task.dueDate,
+      source: task.source,
+      status: task.status,
+      priority: task.priority,
       userId,
       updatedAt: new Date().toISOString(),
-    });
+    };
+    if (task.description !== undefined) cleanTask.description = task.description.slice(0, 2000);
+    if (task.courseName !== undefined) cleanTask.courseName = task.courseName.slice(0, 200);
+    if (task.courseCode !== undefined) cleanTask.courseCode = task.courseCode.slice(0, 50);
+    if (task.moduleName !== undefined) cleanTask.moduleName = task.moduleName.slice(0, 200);
+    if (task.externalUrl !== undefined) cleanTask.externalUrl = task.externalUrl.slice(0, 1000);
+    if (task.estimatedMinutes !== undefined) cleanTask.estimatedMinutes = task.estimatedMinutes;
+    if (task.completedAt !== undefined) cleanTask.completedAt = task.completedAt;
+    if (task.checklist !== undefined) cleanTask.checklist = task.checklist;
+    if (task.notes !== undefined) cleanTask.notes = task.notes.slice(0, 5000);
+    if (task.tags !== undefined) cleanTask.tags = task.tags;
+
+    await setDoc(taskDocRef, cleanTask);
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
@@ -208,7 +220,6 @@ export function subscribeToUserSettings(
       }
     },
     (error) => {
-      console.warn('Settings onSnapshot error:', error.message);
       handleFirestoreError(error, OperationType.GET, path);
     }
   );

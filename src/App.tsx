@@ -13,7 +13,6 @@ import {
   auth, 
   testConnection, 
   loginWithGoogle, 
-  loginAnonymously, 
   logoutUser,
   subscribeToUserTasks, 
   saveTaskToFirestore, 
@@ -55,50 +54,50 @@ export default function App() {
     });
   }, []);
 
-  // Firebase Authentication & Realtime Firestore sync
+  // Track Firebase Google Authentication state
   useEffect(() => {
-    const unsubAuth = onAuthStateChanged(auth, async (user) => {
+    const unsubAuth = onAuthStateChanged(auth, (user) => {
+      setCurrentUser(user);
       if (user) {
-        setCurrentUser(user);
         setIsCloudSynced(true);
+      }
+    });
+    return () => unsubAuth();
+  }, []);
 
-        // Subscribe to user tasks
-        const unsubTasks = subscribeToUserTasks(
-          user.uid,
-          (firestoreTasks) => {
-            if (firestoreTasks.length > 0) {
-              setTasks(firestoreTasks);
-              isInitialSyncDone.current = true;
-            } else if (!isInitialSyncDone.current) {
-              // Seed initial tasks if remote is brand new
-              tasks.forEach((t) => saveTaskToFirestore(user.uid, t));
-              isInitialSyncDone.current = true;
-            }
-          },
-          () => {
-            // Keep local fallback
-          }
-        );
+  // Subscribe to Realtime Firestore when user is signed in
+  useEffect(() => {
+    if (!currentUser?.uid) return;
 
-        // Subscribe to user settings
-        const unsubSettings = subscribeToUserSettings(user.uid, (remoteSettings) => {
-          if (remoteSettings && remoteSettings.theme) {
-            setSettings(remoteSettings);
-          }
-        });
+    const uid = currentUser.uid;
+    const unsubTasks = subscribeToUserTasks(
+      uid,
+      (firestoreTasks) => {
+        if (firestoreTasks.length > 0) {
+          setTasks(firestoreTasks);
+          isInitialSyncDone.current = true;
+        } else if (!isInitialSyncDone.current) {
+          // Seed initial tasks if remote is brand new
+          tasks.forEach((t) => saveTaskToFirestore(uid, t).catch(() => {}));
+          isInitialSyncDone.current = true;
+        }
+      },
+      () => {
+        // Keep local fallback
+      }
+    );
 
-        return () => {
-          unsubTasks();
-          unsubSettings();
-        };
-      } else {
-        // Sign in anonymously to guarantee persistent cloud syncing without requiring manual Google account login
-        loginAnonymously().catch(() => {});
+    const unsubSettings = subscribeToUserSettings(uid, (remoteSettings) => {
+      if (remoteSettings && remoteSettings.theme) {
+        setSettings(remoteSettings);
       }
     });
 
-    return () => unsubAuth();
-  }, []);
+    return () => {
+      unsubTasks();
+      unsubSettings();
+    };
+  }, [currentUser?.uid]);
 
   // Check if incoming device sync link was clicked
   useEffect(() => {

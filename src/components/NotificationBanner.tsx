@@ -34,15 +34,15 @@ export const NotificationBanner: React.FC<Props> = ({ alerts, onSelectTask }) =>
           <ChevronRight className="w-3.5 h-3.5 shrink-0 opacity-70" />
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0 whitespace-nowrap">
           {alerts.length > 1 && (
-            <span className="text-[11px] text-[#8f681a] dark:text-[#ebd69d] font-mono hidden sm:inline opacity-85">
+            <span className="text-[11px] text-[#8f681a] dark:text-[#ebd69d] font-mono hidden sm:inline opacity-85 whitespace-nowrap">
               +{alerts.length - 1} more
             </span>
           )}
           <button
             onClick={() => setDismissed(true)}
-            className="p-1 text-[#8f681a] dark:text-[#ebd69d] hover:bg-[#ebdcb3]/60 dark:hover:bg-[#3d3319] rounded transition-colors"
+            className="p-1 text-[#8f681a] dark:text-[#ebd69d] hover:bg-[#ebdcb3]/60 dark:hover:bg-[#3d3319] rounded transition-colors shrink-0"
             title="Dismiss banner"
           >
             <X className="w-3.5 h-3.5" />
