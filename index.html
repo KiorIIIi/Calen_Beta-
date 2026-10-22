@@ -18,8 +18,146 @@
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
+    <!-- LOGIN & INITIAL SETUP SCREEN -->
+    <section id="login-screen" class="login-screen">
+      <div class="login-topbar">
+        <div class="brand">
+          <span class="brand-name">calen</span>
+          <span class="brand-sep" aria-hidden="true">·</span>
+          <span class="brand-tag">academic planner</span>
+        </div>
+        <button type="button" id="btn-login-theme" class="hdr-btn" style="height:32px;padding:0 12px;font-size:12.5px;">
+          <span>Toggle Light / Dark</span>
+        </button>
+      </div>
+
+      <div class="login-shell">
+        <!-- Left Column: Editorial Value & Setup Architecture -->
+        <div class="login-editorial">
+          <p class="login-kicker">Unified Student Workspace</p>
+          <h1 class="login-headline">Every course deadline and calendar in one calm ledger.</h1>
+          <p class="login-lead">
+            Start with a clean workspace linked to your Google account. Connect your primary Google Calendar now, and add Moodle, Google Classroom, Notion, or Trello whenever you are ready.
+          </p>
+
+          <div class="login-steps">
+            <div class="login-step-row">
+              <span class="login-step-num mono">01</span>
+              <div>
+                <div class="login-step-title">Sign in with any Google Account</div>
+                <div class="login-step-desc">Creates your isolated cloud workspace and lets you choose which email account to sync.</div>
+              </div>
+            </div>
+            <div class="login-step-row">
+              <span class="login-step-num mono">02</span>
+              <div>
+                <div class="login-step-title">Two-Way Google Calendar Sync</div>
+                <div class="login-step-desc">Import upcoming events or push assignment deadlines directly to your primary Google Calendar.</div>
+              </div>
+            </div>
+            <div class="login-step-row">
+              <span class="login-step-num mono">03</span>
+              <div>
+                <div class="login-step-title">Add Moodle, Classroom &amp; Other Calendars Later</div>
+                <div class="login-step-desc">Connect Moodle LMS courses, Google Classroom schedules, Notion, Trello, or any iCal (.ics) feed anytime in Settings.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Column: Interactive Sign-In & Step 2 Setup Panel -->
+        <div class="login-panel">
+          <!-- Step 1: Unauthenticated Sign-In View -->
+          <div id="login-step-auth" class="login-panel-inner">
+            <div>
+              <span class="mono" style="font-size:12px;color:var(--text-muted);">Step 1 of 2 · Account Setup</span>
+              <h2 class="login-panel-title">Sign in to set up your workspace</h2>
+              <p class="login-panel-sub">
+                Choose the Google account you want to use for cloud backup and Google Calendar synchronization.
+              </p>
+            </div>
+
+            <div class="login-actions-stack">
+              <button type="button" id="btn-login-google" class="gsi-material-button login-google-btn">
+                <div class="gsi-material-button-state"></div>
+                <div class="gsi-material-button-content-wrapper">
+                  <div class="gsi-material-button-icon">
+                    <svg version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" style="display: block;">
+                      <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"></path>
+                      <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"></path>
+                      <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"></path>
+                      <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"></path>
+                      <path fill="none" d="M0 0h48v48H0z"></path>
+                    </svg>
+                  </div>
+                  <span class="gsi-material-button-contents">Continue with Google</span>
+                </div>
+              </button>
+
+              <div id="login-error-msg" class="login-feedback hidden"></div>
+
+              <div class="login-divider">
+                <span>or</span>
+              </div>
+
+              <button type="button" id="btn-login-guest" class="hdr-btn login-secondary-btn">
+                Continue with Local Workspace (Connect accounts later)
+              </button>
+            </div>
+
+            <div class="login-footnote">
+              <span>Supported later in Settings:</span>
+              <span>Google Calendar · Moodle LMS · Google Classroom · Notion · Trello · iCal (.ics)</span>
+            </div>
+          </div>
+
+          <!-- Step 2: Post-Login Quick Setup View -->
+          <div id="login-step-setup" class="login-panel-inner hidden">
+            <div>
+              <span class="mono" style="font-size:12px;color:var(--sage-text);">Step 2 of 2 · Google Account Connected</span>
+              <h2 class="login-panel-title">Your workspace is ready</h2>
+              <p id="login-connected-email" class="login-panel-sub">
+                Signed in and synced with your cloud ledger.
+              </p>
+            </div>
+
+            <div class="login-setup-list">
+              <div class="login-setup-item">
+                <div>
+                  <div style="font-weight:600;font-size:13.5px;">Primary Google Calendar</div>
+                  <div id="login-gcal-status" style="font-size:12px;color:var(--text-secondary);">Import your upcoming 30-day schedule now or sync later</div>
+                </div>
+                <button type="button" id="btn-login-import-gcal" class="hdr-btn pastel-sky" style="height:32px;padding:0 12px;font-size:12px;">
+                  Import Events Now
+                </button>
+              </div>
+
+              <div class="login-setup-item">
+                <div>
+                  <div style="font-weight:600;font-size:13.5px;">Moodle, Google Classroom &amp; Other Calendars</div>
+                  <div style="font-size:12px;color:var(--text-secondary);">Available anytime inside Settings → Connected Services</div>
+                </div>
+                <span class="mono" style="font-size:11.5px;color:var(--text-muted);">Add later</span>
+              </div>
+            </div>
+
+            <div id="login-setup-feedback" class="login-feedback hidden"></div>
+
+            <div class="login-actions-stack" style="margin-top:4px;">
+              <button type="button" id="btn-login-finish" class="btn-primary" style="width:100%;height:42px;font-size:14px;">
+                Open My Workspace →
+              </button>
+              <button type="button" id="btn-login-switch-account" class="hdr-btn login-secondary-btn" style="height:34px;font-size:12.5px;">
+                Switch Google Account
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- TOP HEADER (ULTRA-CLEAN: BRAND + VIEW TABS ON LEFT, SETTINGS + NEW TASK ON RIGHT) -->
-    <header class="top-header">
+    <header id="app-header" class="top-header hidden">
       <div class="header-inner">
         <div class="header-left">
           <div class="brand">
@@ -51,7 +189,7 @@
               <line x1="9" y1="8" x2="15" y2="8"></line>
               <line x1="17" y1="16" x2="23" y2="16"></line>
             </svg>
-            <span>Settings</span>
+            <span id="hdr-settings-label">Settings</span>
           </button>
 
           <button type="button" id="btn-new-task" class="btn-primary">
@@ -79,7 +217,7 @@
     </div>
 
     <!-- MAIN WORKSPACE -->
-    <main class="workspace">
+    <main id="app-workspace" class="workspace hidden">
       <!-- VIEW 1: MASTER TASK LIST -->
       <section id="view-tasks">
         <div class="page-header">
@@ -345,6 +483,9 @@
                   <span id="modal-cloud-login-text" class="gsi-material-button-contents">Sign in with Google</span>
                 </div>
               </button>
+              <button type="button" id="btn-open-login-screen" class="hdr-btn" style="height:36px;padding:0 12px;font-size:12.5px;">
+                Switch Account / Setup Screen
+              </button>
             </div>
           </div>
 
@@ -399,7 +540,7 @@
               </div>
               <div style="display:flex;align-items:center;gap:10px;">
                 <button type="button" id="btn-moodle-modal" class="hdr-btn pastel-peach" style="height:30px;padding:0 10px;font-size:12px;">
-                  <span id="moodle-btn-label">Moodle (3)</span>
+                  <span id="moodle-btn-label">Manage Courses</span>
                 </button>
                 <input type="checkbox" id="toggle-plat-moodle" aria-label="Show Moodle tasks" />
               </div>
@@ -418,10 +559,12 @@
             </div>
             <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:16px;padding-top:16px;border-top:1px solid var(--border-color);">
               <div>
-                <div style="font-weight:600;font-size:13.5px;">Restore Default Sample Schedule</div>
-                <div style="font-size:12px;color:var(--text-secondary);">Reset tasks to the curated student schedule</div>
+                <div style="font-weight:600;font-size:13.5px;">Clear All Workspace Data</div>
+                <div style="font-size:12px;color:var(--text-secondary);">Remove all assignments from local storage and cloud</div>
               </div>
-              <button type="button" id="btn-reset-demo" class="hdr-btn">Reset Demo Data</button>
+              <button type="button" id="btn-clear-workspace" class="hdr-btn" style="color:var(--rose-text);border-color:var(--rose-border);background:var(--rose-bg);">
+                Clear All Tasks
+              </button>
             </div>
           </div>
         </div>
@@ -439,7 +582,7 @@
         <div class="modal-hdr">
           <div>
             <h2 style="font-size:18px;">Moodle App API &amp; Course Sync</h2>
-            <p style="font-size:13px;color:var(--text-secondary);">Authenticate your Moodle LMS account and choose courses to sync deadlines</p>
+            <p style="font-size:13px;color:var(--text-secondary);">Connect your Moodle LMS account or import your iCal calendar feed</p>
           </div>
           <button type="button" id="close-moodle-modal" class="hdr-btn hdr-btn-icon" style="width:32px;height:32px;">✕</button>
         </div>
@@ -447,33 +590,42 @@
           <div class="form-grid">
             <div class="form-group">
               <label class="form-label" for="moodle-url">Moodle Instance URL</label>
-              <input type="url" id="moodle-url" class="input-field" value="https://moodle.university.edu" />
+              <input type="url" id="moodle-url" class="input-field" placeholder="https://moodle.university.edu" />
             </div>
             <div class="form-group">
               <label class="form-label" for="moodle-token">Moodle Mobile WebService Token</label>
-              <input type="text" id="moodle-token" class="input-field mono" value="mdl_ws_98f4a21c7e3b" />
+              <input type="text" id="moodle-token" class="input-field mono" placeholder="Enter your Moodle security token" />
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Add Moodle Course to Track</label>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <input type="text" id="new-moodle-code" class="input-field" style="width:130px;" placeholder="Code (e.g. CS 101)" />
+              <input type="text" id="new-moodle-name" class="input-field" style="flex:1;" placeholder="Course Name (e.g. Data Structures)" />
+              <button type="button" id="btn-add-moodle-course" class="hdr-btn pastel-peach">Add Course</button>
             </div>
           </div>
 
           <div class="form-group">
             <div style="display:flex;align-items:center;justify-content:space-between;padding-bottom:8px;border-bottom:1px solid var(--border-strong);">
-              <label class="form-label">Enrolled Moodle Courses</label>
-              <span id="moodle-sync-status" style="font-size:12px;color:var(--peach-text);font-weight:500;">Connected via Moodle REST API</span>
+              <label class="form-label">Tracked Moodle Courses</label>
+              <span id="moodle-sync-status" style="font-size:12px;color:var(--text-secondary);">Ready to sync</span>
             </div>
             <div id="moodle-courses-list" style="display:flex;flex-direction:column;"></div>
           </div>
 
           <div class="form-group">
             <label class="form-label" for="moodle-ical-input">Import Moodle Calendar iCal (.ics) Feed</label>
-            <textarea id="moodle-ical-input" class="input-field mono" style="height:72px;padding:8px 12px;font-size:12px;" placeholder="BEGIN:VCALENDAR... (Paste VEVENT blocks to import deadlines)"></textarea>
+            <textarea id="moodle-ical-input" class="input-field mono" style="height:80px;padding:8px 12px;font-size:12px;" placeholder="BEGIN:VCALENDAR&#10;BEGIN:VEVENT&#10;SUMMARY:Assignment 1&#10;DTEND:20261028T235900Z&#10;END:VEVENT&#10;END:VCALENDAR"></textarea>
             <div style="display:flex;justify-content:flex-end;margin-top:8px;">
               <button type="button" id="btn-parse-ical" class="hdr-btn">Import iCal Events</button>
             </div>
           </div>
         </div>
         <div class="modal-foot">
-          <span style="font-size:12px;color:var(--text-muted);">Synced courses automatically populate Master Task List &amp; Calendar</span>
-          <button type="button" id="btn-save-moodle" class="btn-primary">Sync Selected Courses</button>
+          <span style="font-size:12px;color:var(--text-muted);">Imported deadlines appear in Master Task List &amp; Calendar</span>
+          <button type="button" id="btn-save-moodle" class="btn-primary">Done</button>
         </div>
       </div>
     </div>
@@ -492,8 +644,8 @@
           <!-- Google Auth Header Row -->
           <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;padding-bottom:16px;border-bottom:1px solid var(--border-color);flex-wrap:wrap;">
             <div>
-              <div id="gcal-auth-status-title" style="font-weight:600;font-size:14px;">Connect Google Calendar</div>
-              <div id="gcal-auth-status-desc" style="font-size:12.5px;color:var(--text-secondary);">Sign in with Google to authorize Calendar event sync</div>
+              <div id="gcal-auth-status-title" style="font-weight:600;font-size:14px;">Connect Google Calendar API</div>
+              <div id="gcal-auth-status-desc" style="font-size:12.5px;color:var(--text-secondary);">Authorize Calendar API access for live two-way sync</div>
             </div>
             <button type="button" id="btn-gcal-google-signin" class="gsi-material-button">
               <div class="gsi-material-button-state"></div>
@@ -507,7 +659,7 @@
                     <path fill="none" d="M0 0h48v48H0z"></path>
                   </svg>
                 </div>
-                <span id="gcal-signin-btn-text" class="gsi-material-button-contents">Sign in with Google</span>
+                <span id="gcal-signin-btn-text" class="gsi-material-button-contents">Authorize Calendar API</span>
               </div>
             </button>
           </div>
@@ -537,9 +689,21 @@
 
           <div id="gcal-feedback-box" class="hidden" style="padding:10px 12px;border-radius:8px;font-size:12.5px;border:1px solid var(--sage-border);background:var(--sage-bg);color:var(--sage-text);"></div>
 
+          <!-- Alternative: Import Google Calendar via iCal (.ics) if using a non-test email -->
+          <div class="form-group" style="padding-bottom:16px;border-bottom:1px solid var(--border-color);">
+            <label class="form-label" for="gcal-ical-input">Alternative · Import Google Calendar iCal (.ics) Export</label>
+            <p style="font-size:12px;color:var(--text-secondary);margin-bottom:4px;">
+              Using another email that sees Google's <em>"Error 403: access_denied (Testing mode)"</em>? Either add that email under <strong>Google Cloud Console → OAuth consent screen → Test users</strong>, or paste your Google Calendar <code>.ics</code> file contents below:
+            </p>
+            <textarea id="gcal-ical-input" class="input-field mono" style="height:68px;padding:8px 12px;font-size:12px;" placeholder="BEGIN:VCALENDAR&#10;BEGIN:VEVENT&#10;SUMMARY:Study Session&#10;DTEND:20261102T180000Z&#10;END:VEVENT&#10;END:VCALENDAR"></textarea>
+            <div style="display:flex;justify-content:flex-end;margin-top:8px;">
+              <button type="button" id="btn-gcal-parse-ical" class="hdr-btn">Import Google .ics Events</button>
+            </div>
+          </div>
+
           <div class="form-group">
             <label class="form-label">Synced Google Calendar Events</label>
-            <div id="gcal-synced-list" style="display:flex;flex-direction:column;max-height:200px;overflow-y:auto;"></div>
+            <div id="gcal-synced-list" style="display:flex;flex-direction:column;max-height:180px;overflow-y:auto;"></div>
           </div>
         </div>
         <div class="modal-foot">
@@ -563,6 +727,51 @@
         <div class="modal-foot">
           <button type="button" id="btn-cancel-confirm-gcal" class="hdr-btn">Cancel</button>
           <button type="button" id="btn-proceed-confirm-gcal" class="btn-primary">Confirm Action</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL 6: CONNECT OTHER PLATFORMS & CALENDARS (GOOGLE CLASSROOM, NOTION, TRELLO, ICAL) -->
+    <div id="modal-platform-import" class="modal-overlay hidden" role="dialog" aria-modal="true" style="z-index:70;">
+      <div class="modal-box">
+        <div class="modal-hdr">
+          <div>
+            <h2 id="platform-modal-title" style="font-size:18px;">Connect Platform Calendar</h2>
+            <p id="platform-modal-subtitle" style="font-size:13px;color:var(--text-secondary);">Import an iCal (.ics) schedule feed or add a course/board deadline</p>
+          </div>
+          <button type="button" id="close-platform-modal" class="hdr-btn hdr-btn-icon" style="width:32px;height:32px;">✕</button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" id="platform-modal-source" value="google_classroom" />
+
+          <div class="form-group" style="padding-bottom:16px;border-bottom:1px solid var(--border-color);">
+            <label class="form-label">Quick Add Coursework / Board Item</label>
+            <div class="form-grid" style="margin-top:4px;">
+              <input type="text" id="platform-quick-course" class="input-field" placeholder="Course or Board (e.g. BIO 101, Sprint 3)" />
+              <input type="date" id="platform-quick-date" class="input-field" />
+            </div>
+            <div style="display:flex;gap:8px;margin-top:8px;">
+              <input type="text" id="platform-quick-title" class="input-field" style="flex:1;" placeholder="Assignment or milestone title..." />
+              <button type="button" id="btn-platform-quick-add" class="btn-primary">Add Item</button>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="platform-ical-input">Import Calendar iCal (.ics) Feed</label>
+            <p style="font-size:12px;color:var(--text-secondary);margin-bottom:4px;">
+              Paste the iCal (.ics) export from Google Classroom, Notion Calendar, Trello, or Apple/Outlook Calendar:
+            </p>
+            <textarea id="platform-ical-input" class="input-field mono" style="height:90px;padding:8px 12px;font-size:12px;" placeholder="BEGIN:VCALENDAR&#10;BEGIN:VEVENT&#10;SUMMARY:Midterm Essay&#10;DTEND:20261105T235900Z&#10;END:VEVENT&#10;END:VCALENDAR"></textarea>
+            <div style="display:flex;justify-content:flex-end;margin-top:8px;">
+              <button type="button" id="btn-platform-parse-ical" class="hdr-btn pastel-sage">Import Calendar Feed</button>
+            </div>
+          </div>
+
+          <div id="platform-feedback-box" class="hidden" style="padding:10px 12px;border-radius:8px;font-size:12.5px;border:1px solid var(--sage-border);background:var(--sage-bg);color:var(--sage-text);"></div>
+        </div>
+        <div class="modal-foot">
+          <span style="font-size:12px;color:var(--text-muted);">Synced items appear immediately in your Master Task List &amp; Calendar</span>
+          <button type="button" id="done-platform-modal" class="btn-primary">Done</button>
         </div>
       </div>
     </div>

@@ -1,24 +1,40 @@
 import {
   googleSignIn,
+  googleSignInBasic,
   getAccessToken,
   logoutUser,
   subscribeAuth,
   subscribeUserWorkspace,
   saveTaskToFirestore,
   deleteTaskFromFirestore,
+  clearAllTasksFromFirestore,
   saveMoodleCoursesToFirestore,
   saveSettingsToFirestore,
-  seedWorkspaceToFirestore,
   fetchGoogleCalendarEvents,
   upsertGoogleCalendarEvent,
   deleteGoogleCalendarEvent
 } from './firebase.js';
 
 const STORAGE_KEYS = {
-  TASKS: 'calen_html_tasks_v2',
-  COURSES: 'calen_html_moodle_courses_v2',
-  SETTINGS: 'calen_html_settings_v2'
+  TASKS: 'calen_clean_tasks_v3',
+  COURSES: 'calen_clean_courses_v3',
+  SETTINGS: 'calen_clean_settings_v3'
 };
+
+// Legacy demo IDs to automatically purge if present in cloud from earlier sessions
+const LEGACY_DEMO_TASK_IDS = new Set([
+  'mdl-task-cs189-1',
+  'mdl-task-cs189-2',
+  'mdl-task-bio1a-1',
+  'mdl-task-econ-1',
+  'mdl-task-hist-1',
+  'task-gc-1',
+  'task-gc-2',
+  'task-tr-1',
+  'task-tr-2',
+  'task-nt-1',
+  'task-pr-1'
+]);
 
 function offsetDateISO(daysOffset, hours = 23, minutes = 59) {
   const d = new Date();
@@ -27,209 +43,7 @@ function offsetDateISO(daysOffset, hours = 23, minutes = 59) {
   return d.toISOString();
 }
 
-const DEFAULT_MOODLE_COURSES = [
-  {
-    id: 'moodle-cs189',
-    code: 'CS 189',
-    name: 'Introduction to Machine Learning',
-    instructor: 'Prof. J. Shewchuk',
-    term: 'Fall Semester',
-    synced: true,
-    assignments: [
-      {
-        id: 'mdl-task-cs189-1',
-        title: 'Problem Set 4: Neural Networks Backpropagation Derivation',
-        priority: 'urgent',
-        status: 'in_progress',
-        source: 'moodle',
-        course: 'CS 189',
-        dueDate: offsetDateISO(1, 15, 59),
-        description: 'Submit PDF writeup + Jupyter notebook via Moodle Assignment dropbox.',
-        subtasks: [
-          { id: 's1', title: 'Derive matrix gradients for layer L', completed: true },
-          { id: 's2', title: 'Implement vectorized ReLU backward pass', completed: true },
-          { id: 's3', title: 'Run CIFAR-10 validation accuracy benchmark', completed: false },
-          { id: 's4', title: 'Export LaTeX PDF and upload to Moodle', completed: false }
-        ]
-      },
-      {
-        id: 'mdl-task-cs189-2',
-        title: 'Quiz 6: Support Vector Machines & Kernel Trick',
-        priority: 'medium',
-        status: 'todo',
-        source: 'moodle',
-        course: 'CS 189',
-        dueDate: offsetDateISO(5, 17, 0),
-        description: 'Timed 45-minute quiz on Moodle Quiz module.',
-        subtasks: [
-          { id: 's5', title: 'Review dual formulation lecture notes', completed: false },
-          { id: 's6', title: 'Complete practice quiz on Moodle', completed: false }
-        ]
-      }
-    ]
-  },
-  {
-    id: 'moodle-bio1a',
-    code: 'BIO 1A',
-    name: 'General Biology & Molecular Lab',
-    instructor: 'Dr. M. Doudna',
-    term: 'Fall Semester',
-    synced: true,
-    assignments: [
-      {
-        id: 'mdl-task-bio1a-1',
-        title: 'Lab Report 2: PCR Amplification & Gel Electrophoresis',
-        priority: 'high',
-        status: 'todo',
-        source: 'moodle',
-        course: 'BIO 1A',
-        dueDate: offsetDateISO(3, 10, 0),
-        description: 'Include annotated gel image, standard curve plot, and error analysis.',
-        subtasks: [
-          { id: 'b1', title: 'Label base-pair ladder lanes on gel photo', completed: true },
-          { id: 'b2', title: 'Write discussion of non-specific bands', completed: false },
-          { id: 'b3', title: 'Submit Turnitin check on Moodle', completed: false }
-        ]
-      }
-    ]
-  },
-  {
-    id: 'moodle-econ100b',
-    code: 'ECON 100B',
-    name: 'Macroeconomic Analysis & Policy',
-    instructor: 'Prof. R. Olney',
-    term: 'Fall Semester',
-    synced: true,
-    assignments: [
-      {
-        id: 'mdl-task-econ-1',
-        title: 'Empirical Project: Federal Reserve Monetary Policy Data',
-        priority: 'medium',
-        status: 'in_progress',
-        source: 'moodle',
-        course: 'ECON 100B',
-        dueDate: offsetDateISO(6, 23, 59),
-        description: 'Download FRED CPI series and plot IS-LM response curves.',
-        subtasks: [
-          { id: 'e1', title: 'Pull quarterly FRED inflation dataset', completed: true },
-          { id: 'e2', title: 'Draft 2-page policy memo', completed: false }
-        ]
-      }
-    ]
-  },
-  {
-    id: 'moodle-hist120',
-    code: 'HIST 120',
-    name: 'Seminar in Modern European History',
-    instructor: 'Prof. C. Hesse',
-    term: 'Fall Semester',
-    synced: false,
-    assignments: [
-      {
-        id: 'mdl-task-hist-1',
-        title: 'Primary Source Response: 1848 Pamphlets Archive',
-        priority: 'low',
-        status: 'todo',
-        source: 'moodle',
-        course: 'HIST 120',
-        dueDate: offsetDateISO(8, 18, 0),
-        description: '600-word reflection uploaded to Moodle forum.',
-        subtasks: []
-      }
-    ]
-  }
-];
-
-function getInitialTasks() {
-  const baseTasks = [
-    {
-      id: 'task-gc-1',
-      title: 'Essay Draft: Analysis of "The Great Gatsby" Character Arc',
-      priority: 'urgent',
-      status: 'in_progress',
-      source: 'google_classroom',
-      course: 'AP-LIT',
-      dueDate: offsetDateISO(0, 15, 59),
-      description: 'Google Docs attachment required via Google Classroom.',
-      subtasks: [
-        { id: 'gc1', title: 'Outline thesis & 3 textual citations', completed: true },
-        { id: 'gc2', title: 'Draft body paragraphs', completed: true },
-        { id: 'gc3', title: 'Peer review edits', completed: false },
-        { id: 'gc4', title: 'Turn in on Google Classroom', completed: false }
-      ]
-    },
-    {
-      id: 'task-tr-1',
-      title: 'Submit Capstone Budget Approval Form to Department',
-      priority: 'urgent',
-      status: 'todo',
-      source: 'trello',
-      course: 'Senior Capstone Sprint',
-      dueDate: offsetDateISO(-1, 9, 0),
-      description: 'Sign PDF and attach to Trello Sprint card.',
-      subtasks: []
-    },
-    {
-      id: 'task-gc-2',
-      title: 'DBQ Practice: Progressive Era Reform Movements',
-      priority: 'high',
-      status: 'todo',
-      source: 'google_classroom',
-      course: 'AP-USH',
-      dueDate: offsetDateISO(2, 9, 0),
-      description: 'Analyze 7 primary source documents and write full essay response.',
-      subtasks: [
-        { id: 'u1', title: 'Group documents into 3 buckets', completed: true },
-        { id: 'u2', title: 'Write contextualization & thesis', completed: false },
-        { id: 'u3', title: 'Complete HIPP sourcing for 4 docs', completed: false }
-      ]
-    },
-    {
-      id: 'task-nt-1',
-      title: 'Synthesize Midterm Organic Chemistry Reaction Mechanisms',
-      priority: 'medium',
-      status: 'in_progress',
-      source: 'notion',
-      course: 'CHEM 3A Wiki',
-      dueDate: offsetDateISO(4, 20, 0),
-      description: 'Organize SN1, SN2, E1, E2 stereochemistry summary table in Notion.',
-      subtasks: [
-        { id: 'n1', title: 'Create reaction conditions comparison matrix', completed: true },
-        { id: 'n2', title: 'Add practice flashcards', completed: false }
-      ]
-    },
-    {
-      id: 'task-pr-1',
-      title: 'Submit FAFSA & Cal Grant Renewal Application',
-      priority: 'high',
-      status: 'completed',
-      source: 'personal',
-      course: 'Personal',
-      dueDate: offsetDateISO(-2, 16, 0),
-      description: 'Annual student financial aid deadline.',
-      subtasks: []
-    },
-    {
-      id: 'task-tr-2',
-      title: 'Capstone: Finish Hardware Architecture Block Diagram',
-      priority: 'low',
-      status: 'in_progress',
-      source: 'trello',
-      course: 'Senior Capstone Sprint',
-      dueDate: offsetDateISO(7, 14, 0),
-      description: 'Export SVG diagram and attach to Trello card.',
-      subtasks: []
-    }
-  ];
-
-  const syncedMoodleTasks = DEFAULT_MOODLE_COURSES.filter((c) => c.synced).flatMap(
-    (c) => c.assignments
-  );
-
-  return [...syncedMoodleTasks, ...baseTasks];
-}
-
-// Application State
+// Application State (Starts 100% clean with zero premade tasks or courses)
 const state = {
   activeView: 'tasks',
   subView: 'table',
@@ -245,6 +59,8 @@ const state = {
   draftSubtasks: [],
   user: null,
   hasGcalToken: false,
+  showLoginScreen: true,
+  justSignedInSetup: false,
   unsubFirestore: null,
   pendingConfirmCallback: null,
   tasks: [],
@@ -266,6 +82,10 @@ const broadcast =
 
 function loadLocalState() {
   try {
+    // Clean up any old v1/v2 demo storage keys
+    localStorage.removeItem('calen_html_tasks_v2');
+    localStorage.removeItem('calen_html_moodle_courses_v2');
+
     if (window.location.hash.startsWith('#sync=')) {
       const encoded = window.location.hash.replace('#sync=', '');
       const decoded = JSON.parse(decodeURIComponent(escape(atob(encoded))));
@@ -276,12 +96,12 @@ function loadLocalState() {
     }
 
     const rawCourses = localStorage.getItem(STORAGE_KEYS.COURSES);
-    state.moodleCourses = rawCourses
-      ? JSON.parse(rawCourses)
-      : structuredClone(DEFAULT_MOODLE_COURSES);
+    state.moodleCourses = rawCourses ? JSON.parse(rawCourses) : [];
 
     const rawTasks = localStorage.getItem(STORAGE_KEYS.TASKS);
-    state.tasks = rawTasks ? JSON.parse(rawTasks) : getInitialTasks();
+    state.tasks = rawTasks
+      ? JSON.parse(rawTasks).filter((t) => !LEGACY_DEMO_TASK_IDS.has(t.id))
+      : [];
 
     const rawSettings = localStorage.getItem(STORAGE_KEYS.SETTINGS);
     if (rawSettings) {
@@ -293,9 +113,9 @@ function loadLocalState() {
       };
     }
   } catch (e) {
-    console.warn('Fallback to default state:', e);
-    state.moodleCourses = structuredClone(DEFAULT_MOODLE_COURSES);
-    state.tasks = getInitialTasks();
+    console.warn('Initializing clean workspace state:', e);
+    state.moodleCourses = [];
+    state.tasks = [];
   }
 }
 
@@ -445,6 +265,7 @@ function sortTasks(list) {
 // ============================================================================
 function renderAll() {
   applyTheme();
+  renderAuthScreen();
   renderSettingsSyncStatus();
   renderReminderBanner();
   renderPriorityFocusBar();
@@ -453,11 +274,49 @@ function renderAll() {
   renderGcalModalContent();
 }
 
+function renderAuthScreen() {
+  const loginScreen = document.getElementById('login-screen');
+  const appHeader = document.getElementById('app-header');
+  const appWorkspace = document.getElementById('app-workspace');
+  const stepAuth = document.getElementById('login-step-auth');
+  const stepSetup = document.getElementById('login-step-setup');
+  const connectedEmailEl = document.getElementById('login-connected-email');
+  const hdrSettingsLabel = document.getElementById('hdr-settings-label');
+
+  if (hdrSettingsLabel) {
+    hdrSettingsLabel.textContent = state.user ? 'Settings' : 'Settings · Sign In';
+  }
+
+  if (!loginScreen || !appHeader || !appWorkspace) return;
+
+  if (state.showLoginScreen) {
+    loginScreen.classList.remove('hidden');
+    appHeader.classList.add('hidden');
+    appWorkspace.classList.add('hidden');
+
+    if (state.user && state.justSignedInSetup) {
+      stepAuth?.classList.add('hidden');
+      stepSetup?.classList.remove('hidden');
+      if (connectedEmailEl) {
+        connectedEmailEl.textContent = `Signed in as ${state.user.email} — cloud sync & Google Calendar ready.`;
+      }
+    } else {
+      stepAuth?.classList.remove('hidden');
+      stepSetup?.classList.add('hidden');
+    }
+  } else {
+    loginScreen.classList.add('hidden');
+    appHeader.classList.remove('hidden');
+    appWorkspace.classList.remove('hidden');
+  }
+}
+
 function renderSettingsSyncStatus() {
   const syncedCount = state.moodleCourses.filter((c) => c.synced).length;
   const moodleBtnLabel = document.getElementById('moodle-btn-label');
   if (moodleBtnLabel) {
-    moodleBtnLabel.textContent = `Manage Courses (${syncedCount})`;
+    moodleBtnLabel.textContent =
+      syncedCount > 0 ? `Manage Courses (${syncedCount})` : 'Manage Courses';
   }
 
   const gcalSyncedCount = state.tasks.filter(
@@ -568,11 +427,32 @@ function renderPriorityFocusBar() {
   });
 }
 
+function buildEmptyWorkspaceHtml() {
+  return `
+    <div style="padding:56px 24px;text-align:center;border-bottom:1px solid var(--border-color);display:flex;flex-direction:column;align-items:center;gap:12px;">
+      <h2 style="font-size:20px;color:var(--text-main);">Your workspace is clean and ready</h2>
+      <p style="font-size:14px;color:var(--text-secondary);max-width:480px;">
+        Add your first assignment using the quick-add bar above, or connect your Google Calendar and Moodle account in Settings to sync your real schedule.
+      </p>
+      <div style="display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-top:8px;">
+        <button type="button" data-empty-action="new-task" class="btn-primary">+ Create First Task</button>
+        <button type="button" data-empty-action="open-gcal" class="hdr-btn pastel-sky">Sync Google Calendar</button>
+        <button type="button" data-empty-action="open-moodle" class="hdr-btn pastel-peach">Connect Moodle</button>
+        <button type="button" data-empty-action="open-settings" class="hdr-btn">Settings &amp; Sign In</button>
+      </div>
+    </div>
+  `;
+}
+
 function buildTableHtml(tasks) {
+  if (state.tasks.length === 0) {
+    return buildEmptyWorkspaceHtml();
+  }
+
   if (tasks.length === 0) {
     return `
       <div style="padding:40px 16px;text-align:center;color:var(--text-secondary);border-bottom:1px solid var(--border-color);">
-        No assignments match the current filter. Try clearing filters or adding a new task above.
+        No assignments match the active filter. Try clearing your filter above.
       </div>
     `;
   }
@@ -757,25 +637,31 @@ function renderTasksSection() {
                   <h3 class="group-title">${col.label}</h3>
                   <span class="count-meta">${colTasks.length}</span>
                 </div>
-                ${colTasks
-                  .map((task) => {
-                    const prio = PRIORITY_META[task.priority] || PRIORITY_META.medium;
-                    const src = SOURCE_META[task.source] || SOURCE_META.personal;
-                    const due = formatDueDate(task.dueDate);
-                    return `
-                      <div class="kanban-card" data-row-id="${escapeHtml(task.id)}">
-                        <div class="kanban-card-top">
-                          <span class="badge ${prio.badgeClass}">${prio.label}</span>
-                          <span class="count-meta">${escapeHtml(task.course || src.label)}</span>
-                        </div>
-                        <div class="kanban-card-title">${escapeHtml(task.title)}</div>
-                        <div class="kanban-card-foot">
-                          <span class="mono">${escapeHtml(due.text)}</span>
-                        </div>
-                      </div>
-                    `;
-                  })
-                  .join('')}
+                ${
+                  colTasks.length > 0
+                    ? colTasks
+                        .map((task) => {
+                          const prio = PRIORITY_META[task.priority] || PRIORITY_META.medium;
+                          const src = SOURCE_META[task.source] || SOURCE_META.personal;
+                          const due = formatDueDate(task.dueDate);
+                          return `
+                            <div class="kanban-card" data-row-id="${escapeHtml(task.id)}">
+                              <div class="kanban-card-top">
+                                <span class="badge ${prio.badgeClass}">${prio.label}</span>
+                                <span class="count-meta">${escapeHtml(
+                                  task.course || src.label
+                                )}</span>
+                              </div>
+                              <div class="kanban-card-title">${escapeHtml(task.title)}</div>
+                              <div class="kanban-card-foot">
+                                <span class="mono">${escapeHtml(due.text)}</span>
+                              </div>
+                            </div>
+                          `;
+                        })
+                        .join('')
+                    : `<div style="padding:16px 0;font-size:13px;color:var(--text-muted);">No tasks</div>`
+                }
               </div>
             `;
           })
@@ -788,6 +674,16 @@ function renderTasksSection() {
 }
 
 function attachTaskTableListeners(container) {
+  container.querySelectorAll('[data-empty-action]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const action = btn.getAttribute('data-empty-action');
+      if (action === 'new-task') openNewTaskModal();
+      if (action === 'open-gcal') openGcalModal();
+      if (action === 'open-moodle') openMoodleModal();
+      if (action === 'open-settings') openSettingsModal();
+    });
+  });
+
   container.querySelectorAll('[data-action="toggle-check"]').forEach((cell) => {
     cell.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -1181,7 +1077,7 @@ async function handleGcalImport() {
 function handleGcalBulkExportPrompt() {
   const pendingTasks = state.tasks.filter((t) => t.status !== 'completed');
   if (pendingTasks.length === 0) {
-    showGcalFeedback('All tasks are already completed — no pending deadlines to push.', true);
+    showGcalFeedback('No pending assignments to push — create a task first.', true);
     return;
   }
 
@@ -1324,75 +1220,90 @@ function openMoodleModal() {
   const listEl = document.getElementById('moodle-courses-list');
   if (!listEl) return;
 
-  listEl.innerHTML = state.moodleCourses
-    .map(
-      (course) => `
-      <label class="course-item" data-course-id="${escapeHtml(course.id)}">
-        <div style="display:flex;align-items:center;gap:12px;">
-          <input type="checkbox" class="moodle-course-chk" value="${escapeHtml(course.id)}" ${
-            course.synced ? 'checked' : ''
-          } />
-          <div>
-            <div style="font-weight:600;font-size:13.5px;">${escapeHtml(
-              course.code
-            )} — ${escapeHtml(course.name)}</div>
-            <div style="font-size:12px;color:var(--text-secondary);">${escapeHtml(
-              course.instructor
-            )} · ${course.assignments?.length || 0} module deadlines</div>
+  if (state.moodleCourses.length === 0) {
+    listEl.innerHTML = `
+      <div style="padding:14px 0;font-size:13px;color:var(--text-muted);">
+        No Moodle courses added yet. Add a course above or paste your Moodle iCal (.ics) feed below.
+      </div>
+    `;
+  } else {
+    listEl.innerHTML = state.moodleCourses
+      .map(
+        (course) => `
+        <label class="course-item" data-course-id="${escapeHtml(course.id)}">
+          <div style="display:flex;align-items:center;gap:12px;">
+            <input type="checkbox" class="moodle-course-chk" value="${escapeHtml(course.id)}" ${
+          course.synced ? 'checked' : ''
+        } />
+            <div>
+              <div style="font-weight:600;font-size:13.5px;">${escapeHtml(
+                course.code
+              )} — ${escapeHtml(course.name)}</div>
+            </div>
           </div>
-        </div>
-        <span class="badge ${course.synced ? 'badge-peach' : 'badge-stone'}">${
-          course.synced ? 'Synced' : 'Available'
+          <span class="badge ${course.synced ? 'badge-peach' : 'badge-stone'}">${
+          course.synced ? 'Synced' : 'Paused'
         }</span>
-      </label>
-    `
-    )
-    .join('');
+        </label>
+      `
+      )
+      .join('');
 
-  listEl.querySelectorAll('.moodle-course-chk').forEach((chk) => {
-    chk.addEventListener('change', () => {
-      const course = state.moodleCourses.find((c) => c.id === chk.value);
-      if (course) {
-        course.synced = chk.checked;
-        openMoodleModal();
-      }
+    listEl.querySelectorAll('.moodle-course-chk').forEach((chk) => {
+      chk.addEventListener('change', async () => {
+        const course = state.moodleCourses.find((c) => c.id === chk.value);
+        if (course) {
+          course.synced = chk.checked;
+          saveLocalState();
+          openMoodleModal();
+          renderAll();
+          if (state.user) {
+            await saveMoodleCoursesToFirestore(state.user.uid, state.moodleCourses);
+          }
+        }
+      });
     });
-  });
+  }
 
   document.getElementById('modal-moodle').classList.remove('hidden');
 }
 
-async function applyMoodleCourseSync() {
-  const syncedCourseIds = new Set(state.moodleCourses.filter((c) => c.synced).map((c) => c.code));
-
-  const nonCourseMoodleTasks = state.tasks.filter(
-    (t) =>
-      t.source !== 'moodle' || (!t.id.startsWith('mdl-task-') && syncedCourseIds.has(t.course))
-  );
-
-  const courseAssignments = state.moodleCourses
-    .filter((c) => c.synced)
-    .flatMap((c) => c.assignments || []);
-
-  const mergedMap = new Map();
-  nonCourseMoodleTasks.forEach((t) => mergedMap.set(t.id, t));
-  courseAssignments.forEach((t) => {
-    const existing = state.tasks.find((ex) => ex.id === t.id);
-    mergedMap.set(t.id, existing || t);
-  });
-
-  state.tasks = Array.from(mergedMap.values());
-  saveLocalState();
-  renderAll();
-
-  if (state.user) {
-    await saveMoodleCoursesToFirestore(state.user.uid, state.moodleCourses);
-    for (const t of courseAssignments) {
-      await saveTaskToFirestore(state.user.uid, t);
+function openPlatformImportModal(platformKey) {
+  const meta = {
+    google_classroom: {
+      title: 'Google Classroom · Schedule & Coursework',
+      subtitle: 'Add coursework deadlines or paste your Google Classroom calendar (.ics) feed'
+    },
+    notion: {
+      title: 'Notion · Workspace & Study Databases',
+      subtitle: 'Add study milestones or paste your Notion Calendar (.ics) feed'
+    },
+    trello: {
+      title: 'Trello · Project Sprints & Cards',
+      subtitle: 'Add board deadlines or paste your Trello Calendar power-up (.ics) feed'
     }
-  }
+  }[platformKey] || {
+    title: 'Connect External Calendar',
+    subtitle: 'Import an iCal (.ics) schedule feed or add a deadline'
+  };
 
-  document.getElementById('modal-moodle').classList.add('hidden');
+  document.getElementById('platform-modal-source').value = platformKey;
+  document.getElementById('platform-modal-title').textContent = meta.title;
+  document.getElementById('platform-modal-subtitle').textContent = meta.subtitle;
+  document.getElementById('platform-quick-course').value = '';
+  document.getElementById('platform-quick-title').value = '';
+  document.getElementById('platform-ical-input').value = '';
+
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  document.getElementById('platform-quick-date').value = `${yyyy}-${mm}-${dd}`;
+
+  const fb = document.getElementById('platform-feedback-box');
+  if (fb) fb.classList.add('hidden');
+
+  document.getElementById('modal-platform-import').classList.remove('hidden');
 }
 
 function openSettingsModal() {
@@ -1414,35 +1325,51 @@ function openSettingsModal() {
       {
         key: 'google_classroom',
         name: 'Google Classroom',
-        desc: 'Sync coursework and essay deadlines'
+        desc: 'Sync coursework deadlines and class calendar feeds',
+        btnClass: 'pastel-sage'
       },
       {
         key: 'notion',
         name: 'Notion Workspace',
-        desc: 'Sync study databases and reading lists'
+        desc: 'Sync study databases, reading lists, and Notion Calendar',
+        btnClass: ''
       },
       {
         key: 'trello',
         name: 'Trello Boards',
-        desc: 'Sync project sprints and group milestones'
+        desc: 'Sync project sprints and group milestone cards',
+        btnClass: 'pastel-sky'
       }
     ];
 
     listEl.innerHTML = platforms
-      .map(
-        (p) => `
-        <label class="course-item">
+      .map((p) => {
+        const count = state.tasks.filter((t) => t.source === p.key).length;
+        const btnLabel = count > 0 ? `Connect / Import (${count})` : 'Connect / Import';
+        return `
+        <div class="course-item">
           <div>
             <div style="font-size:13.5px;font-weight:600;">${p.name}</div>
             <div style="font-size:12px;color:var(--text-secondary);">${p.desc}</div>
           </div>
-          <input type="checkbox" data-platform-toggle="${p.key}" ${
-            state.settings.platforms[p.key] !== false ? 'checked' : ''
-          } />
-        </label>
-      `
-      )
+          <div style="display:flex;align-items:center;gap:10px;">
+            <button type="button" data-open-platform="${p.key}" class="hdr-btn ${p.btnClass}" style="height:30px;padding:0 10px;font-size:12px;">
+              <span>${btnLabel}</span>
+            </button>
+            <input type="checkbox" data-platform-toggle="${p.key}" aria-label="Show ${p.name}" ${
+              state.settings.platforms[p.key] !== false ? 'checked' : ''
+            } />
+          </div>
+        </div>
+      `;
+      })
       .join('');
+
+    listEl.querySelectorAll('[data-open-platform]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        openPlatformImportModal(btn.getAttribute('data-open-platform'));
+      });
+    });
 
     listEl.querySelectorAll('[data-platform-toggle]').forEach((chk) => {
       chk.addEventListener('change', async () => {
@@ -1540,7 +1467,6 @@ function initEvents() {
     await persistTask(newTask);
   });
 
-  // Top Header & Unified Settings Modal Triggers
   document.getElementById('btn-new-task').addEventListener('click', () => openNewTaskModal());
   document.getElementById('btn-settings-modal').addEventListener('click', openSettingsModal);
   document.getElementById('btn-gcal-modal').addEventListener('click', openGcalModal);
@@ -1564,7 +1490,7 @@ function initEvents() {
     }
   });
 
-  document.getElementById('btn-theme-quick').addEventListener('click', async () => {
+  const toggleThemeMode = async () => {
     const isCurrentlyDark = document.documentElement.classList.contains('dark');
     state.settings.theme = isCurrentlyDark ? 'light' : 'dark';
     saveLocalState();
@@ -1572,18 +1498,116 @@ function initEvents() {
     if (state.user) {
       await saveSettingsToFirestore(state.user.uid, state.settings);
     }
+  };
+
+  document.getElementById('btn-theme-quick').addEventListener('click', toggleThemeMode);
+  document.getElementById('btn-login-theme').addEventListener('click', toggleThemeMode);
+
+  // Login & Setup Screen Controls
+  document.getElementById('btn-login-google').addEventListener('click', async () => {
+    const errBox = document.getElementById('login-error-msg');
+    if (errBox) errBox.classList.add('hidden');
+    try {
+      // Use basic Google Sign-In (email & profile only) so any Google account can sign in
+      // without being blocked by Google's OAuth Testing Mode check for sensitive scopes.
+      const res = await googleSignInBasic();
+      if (res?.user) {
+        state.user = res.user;
+        state.hasGcalToken = Boolean(res.accessToken);
+        state.justSignedInSetup = true;
+        state.showLoginScreen = true;
+        renderAll();
+      }
+    } catch (err) {
+      if (errBox) {
+        errBox.classList.remove('hidden');
+        errBox.style.backgroundColor = 'var(--rose-bg)';
+        errBox.style.borderColor = 'var(--rose-border)';
+        errBox.style.color = 'var(--rose-text)';
+        errBox.textContent = err.message || 'Google Sign-In was cancelled or blocked by popup settings.';
+      }
+    }
+  });
+
+  document.getElementById('btn-login-guest').addEventListener('click', () => {
+    state.showLoginScreen = false;
+    state.justSignedInSetup = false;
+    renderAll();
+  });
+
+  document.getElementById('btn-login-finish').addEventListener('click', () => {
+    state.showLoginScreen = false;
+    state.justSignedInSetup = false;
+    renderAll();
+  });
+
+  document.getElementById('btn-login-switch-account').addEventListener('click', async () => {
+    try {
+      await logoutUser();
+      state.user = null;
+      state.hasGcalToken = false;
+      state.justSignedInSetup = false;
+      state.showLoginScreen = true;
+      renderAll();
+      const res = await googleSignInBasic();
+      if (res?.user) {
+        state.user = res.user;
+        state.hasGcalToken = Boolean(res.accessToken);
+        state.justSignedInSetup = true;
+        renderAll();
+      }
+    } catch (err) {
+      console.error('Switch account error:', err);
+    }
+  });
+
+  document.getElementById('btn-login-import-gcal').addEventListener('click', async () => {
+    const fb = document.getElementById('login-setup-feedback');
+    if (fb) {
+      fb.classList.remove('hidden');
+      fb.textContent = 'Authorizing Google Calendar API & importing upcoming events...';
+    }
+    try {
+      await ensureGoogleCalendarToken();
+      await handleGcalImport();
+      const gcalCount = state.tasks.filter(
+        (t) => t.source === 'google_calendar' || Boolean(t.gcalEventId)
+      ).length;
+      if (fb) {
+        fb.textContent = `Synced ${gcalCount} Google Calendar event(s). Click "Open My Workspace" below to view your schedule.`;
+      }
+    } catch (err) {
+      if (fb) {
+        fb.innerHTML = `Could not authorize live Calendar API for <strong>${escapeHtml(
+          state.user?.email || 'this email'
+        )}</strong> (if Google showed <em>Error 403: access_denied</em>, add this email under <strong>Google Cloud Console → OAuth consent screen → Test users</strong>, or click <strong>Open My Workspace</strong> to import via Google Calendar <code>.ics</code> in Settings).`;
+      }
+    }
+  });
+
+  document.getElementById('btn-open-login-screen').addEventListener('click', () => {
+    document.getElementById('modal-settings').classList.add('hidden');
+    state.justSignedInSetup = Boolean(state.user);
+    state.showLoginScreen = true;
+    renderAll();
   });
 
   const handleCloudAuthClick = async () => {
     try {
       if (state.user) {
         await logoutUser();
+        state.user = null;
         state.hasGcalToken = false;
+        state.justSignedInSetup = false;
+        state.showLoginScreen = true;
+        document.getElementById('modal-settings').classList.add('hidden');
         renderAll();
       } else {
-        const res = await googleSignIn();
-        if (res?.accessToken) {
-          state.hasGcalToken = true;
+        const res = await googleSignInBasic();
+        if (res?.user) {
+          state.user = res.user;
+          state.hasGcalToken = Boolean(res.accessToken);
+          state.showLoginScreen = false;
           renderAll();
         }
       }
@@ -1601,7 +1625,7 @@ function initEvents() {
   });
   document.getElementById('btn-gcal-google-signin').addEventListener('click', async () => {
     try {
-      const res = await googleSignIn();
+      const res = await googleSignIn({ includeCalendarScope: true });
       if (res?.accessToken) {
         state.user = res.user;
         state.hasGcalToken = true;
@@ -1609,11 +1633,66 @@ function initEvents() {
         showGcalFeedback('Connected to Google Calendar! You can now import or push events.');
       }
     } catch (err) {
-      showGcalFeedback(err.message || 'Google Sign-In failed.', true);
+      showGcalFeedback(
+        'If Google showed "Error 403: access_denied", add this email under Google Cloud Console → OAuth consent screen → Test users, or import your Google Calendar .ics below.',
+        true
+      );
     }
   });
   document.getElementById('btn-gcal-import').addEventListener('click', handleGcalImport);
   document.getElementById('btn-gcal-export').addEventListener('click', handleGcalBulkExportPrompt);
+
+  const gcalIcalBtn = document.getElementById('btn-gcal-parse-ical');
+  if (gcalIcalBtn) {
+    gcalIcalBtn.addEventListener('click', async () => {
+      const raw = document.getElementById('gcal-ical-input').value.trim();
+      if (!raw) return;
+
+      const blocks = raw.split('BEGIN:VEVENT').slice(1);
+      const imported = [];
+      blocks.forEach((b, i) => {
+        const summaryMatch = b.match(/SUMMARY:(.*)/);
+        const dtMatch =
+          b.match(/DTEND(?:;[^:]*)?:(\d{8}T\d{6}Z?)/) ||
+          b.match(/DTSTART(?:;[^:]*)?:(\d{8}T\d{6}Z?)/);
+        const title = summaryMatch ? summaryMatch[1].trim() : `Google Calendar Event #${i + 1}`;
+        let dueDate = offsetDateISO(2, 23, 59);
+        if (dtMatch) {
+          const s = dtMatch[1];
+          const iso = `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}T${s.slice(
+            9,
+            11
+          )}:${s.slice(11, 13)}:00Z`;
+          const parsed = new Date(iso);
+          if (!Number.isNaN(parsed.getTime())) dueDate = parsed.toISOString();
+        }
+        imported.push({
+          id: `gcal-ical-${Date.now()}-${i}`,
+          title,
+          priority: 'medium',
+          status: 'todo',
+          source: 'google_calendar',
+          course: 'Google Calendar',
+          dueDate,
+          description: 'Imported via Google Calendar iCal (.ics) feed',
+          subtasks: []
+        });
+      });
+
+      if (imported.length > 0) {
+        state.tasks = [...imported, ...state.tasks];
+        document.getElementById('gcal-ical-input').value = '';
+        saveLocalState();
+        renderAll();
+        if (state.user) {
+          for (const t of imported) {
+            await saveTaskToFirestore(state.user.uid, t);
+          }
+        }
+        showGcalFeedback(`Imported ${imported.length} event(s) from Google Calendar .ics file.`);
+      }
+    });
+  }
 
   document.getElementById('close-confirm-gcal').addEventListener('click', closeGcalConfirmation);
   document
@@ -1766,10 +1845,37 @@ function initEvents() {
     }
   });
 
+  // Moodle Modal Controls
   document.getElementById('close-moodle-modal').addEventListener('click', () => {
     document.getElementById('modal-moodle').classList.add('hidden');
   });
-  document.getElementById('btn-save-moodle').addEventListener('click', applyMoodleCourseSync);
+  document.getElementById('btn-save-moodle').addEventListener('click', () => {
+    document.getElementById('modal-moodle').classList.add('hidden');
+  });
+
+  document.getElementById('btn-add-moodle-course').addEventListener('click', async () => {
+    const codeEl = document.getElementById('new-moodle-code');
+    const nameEl = document.getElementById('new-moodle-name');
+    const code = codeEl.value.trim();
+    const name = nameEl.value.trim();
+    if (!code || !name) return;
+
+    const newCourse = {
+      id: `moodle-course-${Date.now()}`,
+      code,
+      name,
+      synced: true
+    };
+    state.moodleCourses.push(newCourse);
+    codeEl.value = '';
+    nameEl.value = '';
+    saveLocalState();
+    openMoodleModal();
+    renderAll();
+    if (state.user) {
+      await saveMoodleCoursesToFirestore(state.user.uid, state.moodleCourses);
+    }
+  });
 
   document.getElementById('btn-parse-ical').addEventListener('click', async () => {
     const raw = document.getElementById('moodle-ical-input').value.trim();
@@ -1820,6 +1926,101 @@ function initEvents() {
     }
   });
 
+  // External Platform Import Modal (Google Classroom, Notion, Trello, iCal)
+  document.getElementById('close-platform-modal').addEventListener('click', () => {
+    document.getElementById('modal-platform-import').classList.add('hidden');
+  });
+  document.getElementById('done-platform-modal').addEventListener('click', () => {
+    document.getElementById('modal-platform-import').classList.add('hidden');
+  });
+
+  document.getElementById('btn-platform-quick-add').addEventListener('click', async () => {
+    const source = document.getElementById('platform-modal-source').value || 'google_classroom';
+    const course = document.getElementById('platform-quick-course').value.trim();
+    const title = document.getElementById('platform-quick-title').value.trim();
+    const dateVal = document.getElementById('platform-quick-date').value;
+    if (!title) return;
+
+    const dueIso = dateVal ? new Date(`${dateVal}T23:59:00`).toISOString() : offsetDateISO(2, 23, 59);
+    const newTask = {
+      id: `${source}-${Date.now()}`,
+      title,
+      priority: 'medium',
+      status: 'todo',
+      source,
+      course: course || SOURCE_META[source]?.label || '',
+      dueDate: dueIso,
+      description: `Added via ${SOURCE_META[source]?.label || 'Platform'} integration.`,
+      subtasks: []
+    };
+
+    state.tasks.unshift(newTask);
+    document.getElementById('platform-quick-title').value = '';
+    await persistTask(newTask);
+    openSettingsModal();
+
+    const fb = document.getElementById('platform-feedback-box');
+    if (fb) {
+      fb.classList.remove('hidden');
+      fb.textContent = `Added "${title}" to your Master Task List.`;
+    }
+  });
+
+  document.getElementById('btn-platform-parse-ical').addEventListener('click', async () => {
+    const source = document.getElementById('platform-modal-source').value || 'google_classroom';
+    const raw = document.getElementById('platform-ical-input').value.trim();
+    if (!raw) return;
+
+    const blocks = raw.split('BEGIN:VEVENT').slice(1);
+    const imported = [];
+    blocks.forEach((b, i) => {
+      const summaryMatch = b.match(/SUMMARY:(.*)/);
+      const dtMatch =
+        b.match(/DTEND(?:;[^:]*)?:(\d{8}T\d{6}Z?)/) ||
+        b.match(/DTSTART(?:;[^:]*)?:(\d{8}T\d{6}Z?)/);
+      const title = summaryMatch ? summaryMatch[1].trim() : `Imported Event #${i + 1}`;
+      let dueDate = offsetDateISO(2, 23, 59);
+      if (dtMatch) {
+        const s = dtMatch[1];
+        const iso = `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}T${s.slice(
+          9,
+          11
+        )}:${s.slice(11, 13)}:00Z`;
+        const parsed = new Date(iso);
+        if (!Number.isNaN(parsed.getTime())) dueDate = parsed.toISOString();
+      }
+      imported.push({
+        id: `${source}-ical-${Date.now()}-${i}`,
+        title,
+        priority: 'medium',
+        status: 'todo',
+        source,
+        course: SOURCE_META[source]?.label || 'Calendar Feed',
+        dueDate,
+        description: `Imported via ${SOURCE_META[source]?.label || 'External'} iCal (.ics) feed`,
+        subtasks: []
+      });
+    });
+
+    if (imported.length > 0) {
+      state.tasks = [...imported, ...state.tasks];
+      document.getElementById('platform-ical-input').value = '';
+      saveLocalState();
+      renderAll();
+      openSettingsModal();
+      if (state.user) {
+        for (const t of imported) {
+          await saveTaskToFirestore(state.user.uid, t);
+        }
+      }
+      const fb = document.getElementById('platform-feedback-box');
+      if (fb) {
+        fb.classList.remove('hidden');
+        fb.textContent = `Imported ${imported.length} event(s) into ${SOURCE_META[source]?.label}.`;
+      }
+    }
+  });
+
   document.getElementById('close-settings-modal').addEventListener('click', () => {
     document.getElementById('modal-settings').classList.add('hidden');
   });
@@ -1838,18 +2039,14 @@ function initEvents() {
     });
   });
 
-  document.getElementById('btn-reset-demo').addEventListener('click', async () => {
-    state.moodleCourses = structuredClone(DEFAULT_MOODLE_COURSES);
-    state.tasks = getInitialTasks();
+  document.getElementById('btn-clear-workspace').addEventListener('click', async () => {
+    const previousTasks = [...state.tasks];
+    state.tasks = [];
+    state.moodleCourses = [];
     saveLocalState();
     renderAll();
-    if (state.user) {
-      await seedWorkspaceToFirestore(
-        state.user.uid,
-        state.tasks,
-        state.moodleCourses,
-        state.settings
-      );
+    if (state.user && previousTasks.length > 0) {
+      await clearAllTasksFromFirestore(state.user.uid, previousTasks);
     }
     document.getElementById('modal-settings').classList.add('hidden');
   });
@@ -1883,27 +2080,26 @@ function initEvents() {
     }
 
     if (user) {
+      if (!state.justSignedInSetup) {
+        state.showLoginScreen = false;
+      }
       state.unsubFirestore = subscribeUserWorkspace(user.uid, {
-        onTasks: async (cloudTasks, isEmpty) => {
-          if (isEmpty && state.tasks.length > 0) {
-            await seedWorkspaceToFirestore(
-              user.uid,
-              state.tasks,
-              state.moodleCourses,
-              state.settings
-            );
-          } else if (!isEmpty) {
-            state.tasks = cloudTasks;
-            saveLocalState(false);
-            renderAll();
+        onTasks: async (cloudTasks) => {
+          // Purge any legacy demo tasks if they existed in cloud from earlier sessions
+          const demoTasksInCloud = cloudTasks.filter((t) => LEGACY_DEMO_TASK_IDS.has(t.id));
+          if (demoTasksInCloud.length > 0) {
+            await clearAllTasksFromFirestore(user.uid, demoTasksInCloud);
           }
+          const realCloudTasks = cloudTasks.filter((t) => !LEGACY_DEMO_TASK_IDS.has(t.id));
+          state.tasks = realCloudTasks;
+          saveLocalState(false);
+          renderAll();
         },
-        onMoodleCourses: (cloudCourses, isEmpty) => {
-          if (!isEmpty) {
-            state.moodleCourses = cloudCourses;
-            saveLocalState(false);
-            renderAll();
-          }
+        onMoodleCourses: (cloudCourses) => {
+          const realCourses = cloudCourses.filter((c) => !c.id?.startsWith('moodle-'));
+          state.moodleCourses = realCourses;
+          saveLocalState(false);
+          renderAll();
         },
         onSettings: (cloudSettings) => {
           if (cloudSettings) {

@@ -3,7 +3,6 @@ import {
   getAuth,
   GoogleAuthProvider,
   signInWithPopup,
-  signOut,
   onAuthStateChanged
 } from 'firebase/auth';
 import {
@@ -25,8 +24,14 @@ export const auth = getAuth(app);
 // Google Workspace OAuth Scopes
 export const SCOPES = ['https://www.googleapis.com/auth/calendar.events'];
 
-const provider = new GoogleAuthProvider();
-SCOPES.forEach((scope) => provider.addScope(scope));
+// Basic Google Auth Provider (no sensitive Workspace scopes -> allows any Google account to sign in without 403 testing-mode block)
+const basicProvider = new GoogleAuthProvider();
+basicProvider.setCustomParameters({ prompt: 'select_account' });
+
+// Google Calendar OAuth Provider (requests sensitive calendar.events scope for 2-way Calendar API)
+const calendarProvider = new GoogleAuthProvider();
+SCOPES.forEach((scope) => calendarProvider.addScope(scope));
+calendarProvider.setCustomParameters({ prompt: 'select_account' });
 
 // In-memory access token cache (never stored in localStorage or sessionStorage)
 let isSigningIn = false;
@@ -79,10 +84,49 @@ async function testConnection() {
 }
 testConnection();
 
-export async function googleSignIn() {
+/**
+ * Basic Google Sign-In for account identity & Firestore Cloud Sync.
+ * Uses basicProvider (openid, email, profile) so secondary Google accounts
+ * are not blocked by Google's OAuth Testing Mode sensitive-scope check on login.
+ */
+export async function googleSignInBasic() {
   try {
     isSigningIn = true;
-    const result = await signInWithPopup(auth, provider);
+    const result = await signInWithPopup(auth, basicProvider);
+    return { user: result.user, accessToken: cachedAccessToken };
+  } catch (error) {
+    console.error('Basic sign in error:', error);
+    throw error;
+  } finally {
+    isSigningIn = false;
+  }
+}
+
+/**
+ * Requests the Google Calendar OAuth scope (calendar.events).
+ * Note: While the GCP OAuth Consent Screen is in "Testing" mode, Google only
+ * permits the project owner or emails added to the GCP Console "Test users" list.
+ */
+export async function googleSignIn(options = {}) {
+  const { includeCalendarScope = true } = options;
+  if (!includeCalendarScope) {
+    return googleSignInBasic();
+  }
+  try {
+    isSigningIn = true;
+    const activeProvider = auth.currentUser?.email
+      ? (() => {
+          const p = new GoogleAuthProvider();
+          SCOPES.forEach((scope) => p.addScope(scope));
+          p.setCustomParameters({
+            login_hint: auth.currentUser.email,
+            prompt: 'consent'
+          });
+          return p;
+        })()
+      : calendarProvider;
+
+    const result = await signInWithPopup(auth, activeProvider);
     const credential = GoogleAuthProvider.credentialFromResult(result);
     if (!credential?.accessToken) {
       throw new Error('Failed to get access token from Firebase Auth');
@@ -90,7 +134,7 @@ export async function googleSignIn() {
     cachedAccessToken = credential.accessToken;
     return { user: result.user, accessToken: cachedAccessToken };
   } catch (error) {
-    console.error('Sign in error:', error);
+    console.error('Google Calendar OAuth error:', error);
     throw error;
   } finally {
     isSigningIn = false;
@@ -183,7 +227,7 @@ export async function upsertGoogleCalendarEvent(task) {
   }
 
   const due = new Date(task.dueDate);
-  const start = new Date(due.getTime() - 60 * 60 * 1000); // 1 hour block ending at deadline
+  const start = new Date(due.getTime() - 60 * 60 * 1000);
 
   const body = {
     summary: `[Calen] ${task.title}`,
@@ -213,7 +257,6 @@ export async function upsertGoogleCalendarEvent(task) {
     throw new Error('NEEDS_AUTH');
   }
 
-  // If event was deleted on Google Calendar, fallback to POST
   if (hasExistingId && res.status === 404) {
     const fallbackRes = await fetch(
       'https://www.googleapis.com/calendar/v3/calendars/primary/events',
@@ -329,6 +372,19 @@ export async function deleteTaskFromFirestore(uid, taskId) {
   }
 }
 
+export async function clearAllTasksFromFirestore(uid, tasks) {
+  const basePath = `users/${uid}/tasks`;
+  try {
+    const batch = writeBatch(db);
+    tasks.forEach((t) => {
+      batch.delete(doc(db, basePath, t.id));
+    });
+    await batch.commit();
+  } catch (err) {
+    handleFirestoreError(err, OperationType.DELETE, basePath);
+  }
+}
+
 export async function saveMoodleCoursesToFirestore(uid, courses) {
   const basePath = `users/${uid}/moodle_courses`;
   try {
@@ -349,30 +405,4 @@ export async function saveSettingsToFirestore(uid, settings) {
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, path);
   }
-}
-
-export async function seedWorkspaceToFirestore(uid, tasks, courses, settings) {
-  try {
-    const batch = writeBatch(db);
-    tasks.forEach((t) => {
-      const clean = { ...t, uid };
-      Object.keys(clean).forEach((k) => {
-        if (clean[k] === undefined) delete clean[k];
-      });
-      batch.set(doc(db, `users/${uid}/tasks`, t.id), clean);
-    });
-    courses.forEach((c) => {
-      batch.set(doc(db, basePathOrCourses(uid), c.id), { ...c, uid });
-    });
-    if (settings) {
-      batch.set(doc(db, `users/${uid}/settings/preferences`), { ...settings, uid });
-    }
-    await batch.commit();
-  } catch (err) {
-    handleFirestoreError(err, OperationType.WRITE, `users/${uid}`);
-  }
-}
-
-function basePathOrCourses(uid) {
-  return `users/${uid}/moodle_courses`;
 }
