@@ -18,48 +18,33 @@
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
-    <!-- TOP HEADER (ULTRA-CLEAN: BRAND + VIEW TABS ON LEFT, SETTINGS + NEW TASK ON RIGHT) -->
-    <header class="top-header">
-      <div class="header-inner">
-        <div class="header-left">
-          <div class="brand">
-            <span class="brand-name">calen</span>
-            <span class="brand-sep" aria-hidden="true">·</span>
-            <span class="brand-tag">academic planner</span>
-          </div>
-
-          <nav class="view-switcher" aria-label="Primary Views">
-            <button type="button" id="tab-tasks" class="nav-tab active">
-              <span>Master Task List</span>
-            </button>
-            <button type="button" id="tab-calendar" class="nav-tab">
-              <span>Calendar View</span>
-            </button>
-          </nav>
-        </div>
-
-        <div class="header-right">
-          <button type="button" id="btn-settings-modal" class="hdr-btn" title="Settings, Appearance, Cloud & Platform Sync">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="4" y1="21" x2="4" y2="14"></line>
-              <line x1="4" y1="10" x2="4" y2="3"></line>
-              <line x1="12" y1="21" x2="12" y2="12"></line>
-              <line x1="12" y1="8" x2="12" y2="3"></line>
-              <line x1="20" y1="21" x2="20" y2="16"></line>
-              <line x1="20" y1="12" x2="20" y2="3"></line>
-              <line x1="1" y1="14" x2="7" y2="14"></line>
-              <line x1="9" y1="8" x2="15" y2="8"></line>
-              <line x1="17" y1="16" x2="23" y2="16"></line>
-            </svg>
-            <span>Settings</span>
-          </button>
-
-          <button type="button" id="btn-new-task" class="btn-primary">
-            <span>+ New Task</span>
-          </button>
-        </div>
+    <a class="skip-link" href="#workspace">Skip to tasks</a>
+    <aside class="app-sidebar" aria-label="Workspace">
+      <div class="sidebar-brand"><img src="/assets/figma/brand-calendar.svg" width="24" height="24" alt="" /><span class="brand-name">calen</span></div>
+      <p class="workspace-label">Personal workspace</p>
+      <nav class="primary-nav" aria-label="Primary views">
+        <button type="button" id="tab-tasks" class="sidebar-link active" data-view="tasks" aria-current="page"><img src="/assets/figma/tasks.svg" width="20" height="20" alt="" />Tasks</button>
+        <button type="button" id="tab-calendar" class="sidebar-link" data-view="calendar"><img src="/assets/figma/calendar.svg" width="20" height="20" alt="" />Calendar</button>
+      </nav>
+      <div class="sidebar-sources"><h2>Sources</h2>
+        <button type="button" data-source="all" class="source-link active">All sources</button>
+        <button type="button" data-source="google_classroom" class="source-link">Google Classroom</button>
+        <button type="button" data-source="moodle" class="source-link">Moodle</button>
+        <button type="button" data-source="google_calendar" class="source-link">Google Calendar</button>
+        <button type="button" data-source="notion" class="source-link">Notion</button>
+        <button type="button" data-source="trello" class="source-link">Trello</button>
       </div>
-    </header>
+      <div class="sidebar-footer">
+        <button type="button" class="sidebar-link" data-open-settings="connections"><img src="/assets/figma/link.svg" width="20" height="20" alt="" />Connections</button>
+        <button type="button" id="btn-settings-modal" class="sidebar-link"><img src="/assets/figma/link.svg" width="20" height="20" alt="" />Settings</button>
+        <button type="button" class="account-link" data-open-settings="account"><span id="workspace-account">Local workspace</span><span class="account-caption" id="workspace-account-status">Saved on this device</span></button>
+      </div>
+    </aside>
+    <header class="mobile-header"><span class="brand-name">calen</span><button type="button" class="hdr-btn" data-open-settings="account">Account</button></header>
+    <nav class="mobile-nav" aria-label="Mobile primary views">
+      <button type="button" class="sidebar-link active" data-view="tasks" aria-current="page"><img src="/assets/figma/mobile-tasks.svg" width="20" height="20" alt="" />Tasks</button>
+      <button type="button" class="sidebar-link" data-view="calendar"><img src="/assets/figma/mobile-calendar.svg" width="20" height="20" alt="" />Calendar</button>
+    </nav>
 
     <!-- REMINDER BANNER -->
     <div id="reminder-banner" class="reminder-banner hidden">
@@ -79,44 +64,31 @@
     </div>
 
     <!-- MAIN WORKSPACE -->
-    <main class="workspace">
+    <main class="workspace" id="workspace" tabindex="-1">
+      <div class="workspace-topbar"><button type="button" id="toggle-sidebar" aria-label="Collapse sidebar" aria-expanded="true"><img src="/assets/figma/collapse.svg" width="20" height="20" alt="" /></button><span>Personal / <span id="current-view-label">Tasks</span></span></div>
       <!-- VIEW 1: MASTER TASK LIST -->
       <section id="view-tasks">
         <div class="page-header">
           <div>
             <div class="page-title-row">
-              <h1 class="page-title">Master Task List</h1>
+              <h1 class="page-title">Tasks</h1>
               <span aria-hidden="true" class="count-meta">·</span>
               <span id="task-total-chip" class="count-meta">0 assignments</span>
             </div>
-            <p class="page-subtitle">
-              Unified student assignments &amp; deadlines synced across Moodle, Google Calendar, Classroom, Notion, and Trello
-            </p>
+            <p class="page-subtitle" id="tasks-subtitle">Your deadlines, in one place</p>
           </div>
 
-          <div class="view-switcher" role="tablist" aria-label="Task Layout">
-            <button type="button" data-subview="table" class="nav-tab subview-btn active">Table</button>
-            <button type="button" data-subview="priority" class="nav-tab subview-btn">By Priority</button>
-            <button type="button" data-subview="platform" class="nav-tab subview-btn">By Platform</button>
-            <button type="button" data-subview="board" class="nav-tab subview-btn">Board</button>
-          </div>
+          <button type="button" id="btn-new-task" class="btn-primary">Add task</button>
         </div>
-
-        <!-- PRIORITY FOCUS BAR -->
-        <div id="priority-focus-bar" class="priority-focus-bar"></div>
-
         <!-- FILTER & SEARCH TOOLBAR -->
         <div class="toolbar-row">
           <div class="search-box">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="11" cy="11" r="8"></circle>
-              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-            </svg>
+            <picture class="search-icon"><source media="(max-width: 760px)" srcset="/assets/figma/mobile-search.svg" /><img src="/assets/figma/search.svg" width="16" height="16" alt="" /></picture>
             <input
               type="text"
               id="search-input"
               class="input-field"
-              placeholder="Search assignments, courses, tags..."
+              placeholder="Search your tasks" aria-label="Search tasks"
             />
           </div>
 
@@ -130,36 +102,52 @@
             <option value="personal">Personal</option>
           </select>
 
-          <select id="filter-status" class="select-field" aria-label="Filter by Status">
+          <select id="filter-course" class="select-field" aria-label="Filter by course"><option value="all">All courses</option></select>
+
+
+
+
+        </div>
+
+        <details class="view-options"><summary>View options &amp; priority</summary>
+        <div class="task-layouts" aria-label="Task layout">
+          <button type="button" data-subview="deadline" class="nav-tab subview-btn active" aria-pressed="true">Deadlines</button>
+          <button type="button" data-subview="table" class="nav-tab subview-btn" aria-pressed="false">Table</button>
+          <button type="button" data-subview="priority" class="nav-tab subview-btn" aria-pressed="false">By priority</button>
+          <button type="button" data-subview="platform" class="nav-tab subview-btn" aria-pressed="false">By platform</button>
+          <button type="button" data-subview="board" class="nav-tab subview-btn" aria-pressed="false">Board</button>
+        </div>
+
+        <!-- PRIORITY FOCUS BAR -->
+        <div id="priority-focus-bar" class="priority-focus-bar"></div>
+
+<div class="extra-filters">          <select id="filter-status" class="select-field" aria-label="Filter by Status">
             <option value="all">All Statuses</option>
             <option value="pending">Pending (To Do &amp; In Progress)</option>
             <option value="today">Due Today</option>
             <option value="completed">Completed</option>
-          </select>
-
-          <select id="sort-by" class="select-field" aria-label="Sort Tasks">
+          </select>          <select id="sort-by" class="select-field" aria-label="Sort Tasks">
             <option value="priority">Sort: Priority First</option>
-            <option value="dueDate">Sort: Due Soonest</option>
+            <option value="dueDate" selected>Sort: Due Soonest</option>
             <option value="source">Sort: Platform</option>
-          </select>
-        </div>
-
+          </select></div></details>
+        <details class="quick-add-disclosure"><summary>Quick add a task</summary>
         <!-- INLINE QUICK ADD -->
         <form id="quick-add-form" class="quick-add-bar">
           <input
             type="text"
-            id="quick-add-title"
+            id="quick-add-title" aria-label="Task title"
             class="quick-add-input"
             placeholder="+ Quick add an assignment or deadline and press Enter..."
           />
           <div class="quick-add-controls">
-            <select id="quick-add-priority" class="select-field">
+            <select id="quick-add-priority" aria-label="Task priority" class="select-field">
               <option value="urgent">Urgent Priority</option>
               <option value="high">High Priority</option>
               <option value="medium" selected>Medium Priority</option>
               <option value="low">Low Priority</option>
             </select>
-            <select id="quick-add-source" class="select-field">
+            <select id="quick-add-source" aria-label="Task source" class="select-field">
               <option value="personal">Personal</option>
               <option value="google_calendar">Google Calendar</option>
               <option value="moodle">Moodle</option>
@@ -173,6 +161,7 @@
           </div>
         </form>
 
+        </details>
         <!-- TASK LIST CONTAINER -->
         <div id="tasks-container"></div>
       </section>
@@ -222,11 +211,11 @@
     </main>
 
     <!-- MODAL 1: TASK DETAIL / CREATE -->
-    <div id="modal-task" class="modal-overlay hidden" role="dialog" aria-modal="true">
+    <div id="modal-task" aria-labelledby="modal-task-heading" class="modal-overlay hidden" role="dialog" aria-modal="true">
       <div class="modal-box">
         <div class="modal-hdr">
           <h2 id="modal-task-heading" style="font-size:18px;">Assignment Details</h2>
-          <button type="button" id="close-task-modal" class="hdr-btn hdr-btn-icon" style="width:32px;height:32px;">✕</button>
+          <button type="button" id="close-task-modal" aria-label="Close task details" class="hdr-btn hdr-btn-icon" style="width:32px;height:32px;">✕</button>
         </div>
         <form id="form-task" class="modal-body">
           <input type="hidden" id="task-id" />
@@ -318,7 +307,7 @@
             <h2 style="font-size:18px;">Settings &amp; Connected Services</h2>
             <p style="font-size:13px;color:var(--text-secondary);">Manage appearance, Google Cloud sync, Moodle courses, and platform integrations</p>
           </div>
-          <button type="button" id="close-settings-modal" class="hdr-btn hdr-btn-icon" style="width:32px;height:32px;">✕</button>
+          <button type="button" id="close-settings-modal" aria-label="Close settings" class="hdr-btn hdr-btn-icon" style="width:32px;height:32px;">✕</button>
         </div>
 
         <div class="modal-body">

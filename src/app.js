@@ -1,3 +1,4 @@
+import { dayKey, groupByDeadline } from './deadlines.js';
 import {
   googleSignIn,
   getAccessToken,
@@ -232,14 +233,15 @@ function getInitialTasks() {
 // Application State
 const state = {
   activeView: 'tasks',
-  subView: 'table',
+  subView: 'deadline',
   calMode: 'month',
   calCursor: new Date(),
   priorityFilter: 'all',
   sourceFilter: 'all',
+  courseFilter: 'all',
   statusFilter: 'all',
   searchQuery: '',
-  sortBy: 'priority',
+  sortBy: 'dueDate',
   reminderDismissed: false,
   editingTaskId: null,
   draftSubtasks: [],
@@ -365,6 +367,7 @@ function escapeHtml(str) {
 }
 
 function formatDueDate(isoString) {
+  if (!isoString) return { text: 'No deadline', isOverdue: false };
   const date = new Date(isoString);
   if (Number.isNaN(date.getTime())) return { text: 'No date', isOverdue: false };
 
@@ -396,6 +399,7 @@ function getVisibleTasks() {
     if (state.sourceFilter !== 'all' && task.source !== state.sourceFilter) {
       return false;
     }
+    if (state.courseFilter !== 'all' && task.course !== state.courseFilter) return false;
     if (state.statusFilter === 'pending' && task.status === 'completed') {
       return false;
     }
@@ -403,15 +407,7 @@ function getVisibleTasks() {
       return false;
     }
     if (state.statusFilter === 'today') {
-      const d = new Date(task.dueDate);
-      const now = new Date();
-      if (
-        d.getFullYear() !== now.getFullYear() ||
-        d.getMonth() !== now.getMonth() ||
-        d.getDate() !== now.getDate()
-      ) {
-        return false;
-      }
+      if (dayKey(task.dueDate) !== dayKey(new Date())) return false;
     }
     if (state.searchQuery.trim()) {
       const q = state.searchQuery.toLowerCase();
@@ -445,6 +441,7 @@ function sortTasks(list) {
 // ============================================================================
 function renderAll() {
   applyTheme();
+  renderWorkspaceShell();
   renderSettingsSyncStatus();
   renderReminderBanner();
   renderPriorityFocusBar();
@@ -665,11 +662,71 @@ function buildTableHtml(tasks) {
   `;
 }
 
+function selectView(view) {
+  state.activeView = view;
+  document.querySelectorAll('[data-view]').forEach((button) => {
+    const active = button.dataset.view === view;
+    button.classList.toggle('active', active);
+    if (active) button.setAttribute('aria-current', 'page');
+    else button.removeAttribute('aria-current');
+  });
+  document.getElementById('view-tasks').classList.toggle('hidden', view !== 'tasks');
+  document.getElementById('view-calendar').classList.toggle('hidden', view !== 'calendar');
+  document.getElementById('current-view-label').textContent = view === 'tasks' ? 'Tasks' : 'Calendar';
+  if (view === 'calendar') renderCalendarSection();
+}
+
+function renderWorkspaceShell() {
+  const date = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', weekday: 'long', month: 'long', day: 'numeric' }).format(new Date());
+  document.getElementById('tasks-subtitle').textContent = `${date} · Your deadlines, in one place`;
+  document.getElementById('workspace-account').textContent = state.user?.displayName || state.user?.email || 'Local workspace';
+  document.getElementById('workspace-account-status').textContent = state.user ? 'Google account connected' : 'Saved on this device';
+  document.querySelectorAll('[data-source]').forEach((button) => {
+    button.classList.toggle('active', button.dataset.source === state.sourceFilter);
+    button.setAttribute('aria-pressed', String(button.dataset.source === state.sourceFilter));
+  });
+  const courses = [...new Set(state.tasks.map(task => task.course).filter(Boolean))].sort();
+  if (state.courseFilter !== 'all' && !courses.includes(state.courseFilter)) state.courseFilter = 'all';
+  const courseSelect = document.getElementById('filter-course');
+  courseSelect.innerHTML = '<option value="all">All courses</option>' + courses.map(course => `<option value="${escapeHtml(course)}">${escapeHtml(course)}</option>`).join('');
+  courseSelect.value = state.courseFilter;
+}
+
+function buildDeadlineHtml(tasks) {
+  if (!tasks.length) {
+    const empty = state.tasks.length === 0;
+    return `<div class="deadline-empty"><h2>${empty ? 'A little clarity starts here.' : 'No tasks match these filters.'}</h2><p>${empty ? 'Add your first task to keep your next deadline in sight.' : 'Try another search or clear your filters to see all tasks.'}</p><button type="button" class="btn-primary" ${empty ? 'data-add-first' : 'data-clear-filters'}>${empty ? 'Add task' : 'Clear filters'}</button></div>`;
+  }
+  return Object.entries(groupByDeadline(tasks)).filter(([, list]) => list.length).map(([label, list]) => {
+    const rows = list.map(task => {
+      const done = task.status === 'completed';
+      const due = task.dueDate && dayKey(task.dueDate) ? new Date(task.dueDate) : null;
+      const today = due && dayKey(due) === dayKey(new Date());
+      const dueLabel = due ? `${today ? 'Today' : due.toLocaleDateString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric' })}, ${due.toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: 'numeric', minute: '2-digit' })}` : 'No deadline';
+      const source = SOURCE_META[task.source] || SOURCE_META.personal;
+      return `<div class="deadline-row ${done ? 'is-complete' : ''}">
+        <label class="deadline-check"><input type="checkbox" data-action="toggle-check" data-id="${escapeHtml(task.id)}" ${done ? 'checked' : ''} aria-label="${done ? 'Mark incomplete' : 'Complete'}: ${escapeHtml(task.title)}" /></label>
+        <button type="button" class="deadline-task" data-row-id="${escapeHtml(task.id)}">
+          <span class="deadline-title">${escapeHtml(task.title)}</span>
+          <span class="deadline-course">${escapeHtml(task.course || 'Personal task')}</span>
+          <span class="deadline-due ${label === 'Overdue' ? 'is-overdue' : ''}">${escapeHtml(dueLabel)}</span>
+          <span class="deadline-source">${escapeHtml(source.label)}</span>
+        </button>
+      </div>`;
+    }).join('');
+    const heading = `<span>${label}</span><span class="deadline-count">${list.length}</span>`;
+    return label === 'Completed'
+      ? `<details class="deadline-completed"><summary>${heading}</summary>${rows}</details>`
+      : `<section class="deadline-group" aria-label="${label}"><h2 class="deadline-group-title ${label === 'Overdue' ? 'is-overdue' : ''}">${heading}</h2>${rows}</section>`;
+  }).join('');
+}
+
 function renderTasksSection() {
   const container = document.getElementById('tasks-container');
   const totalChip = document.getElementById('task-total-chip');
   if (!container) return;
 
+  const completedOpen = container.querySelector('.deadline-completed')?.open || false;
   const filtered = sortTasks(getVisibleTasks());
   if (totalChip) {
     totalChip.textContent = `${filtered.length} ${
@@ -677,7 +734,9 @@ function renderTasksSection() {
     }`;
   }
 
-  if (state.subView === 'table') {
+  if (state.subView === 'deadline') {
+    container.innerHTML = buildDeadlineHtml(filtered);
+  } else if (state.subView === 'table') {
     container.innerHTML = buildTableHtml(filtered);
   } else if (state.subView === 'priority') {
     const levels = ['urgent', 'high', 'medium', 'low'];
@@ -784,7 +843,18 @@ function renderTasksSection() {
     `;
   }
 
+  const completed = container.querySelector('.deadline-completed');
+  if (completed) completed.open = completedOpen;
   attachTaskTableListeners(container);
+  container.querySelector('[data-clear-filters]')?.addEventListener('click', () => {
+    state.priorityFilter = state.sourceFilter = state.courseFilter = state.statusFilter = 'all';
+    state.searchQuery = '';
+    document.getElementById('search-input').value = '';
+    document.getElementById('filter-source').value = 'all';
+    document.getElementById('filter-status').value = 'all';
+    renderAll();
+  });
+  container.querySelector('[data-add-first]')?.addEventListener('click', openNewTaskModal);
 }
 
 function attachTaskTableListeners(container) {
@@ -1471,28 +1541,76 @@ function openSettingsModal() {
 // EVENT LISTENERS & INITIALIZATION
 // ============================================================================
 function initEvents() {
-  document.getElementById('tab-tasks').addEventListener('click', () => {
-    state.activeView = 'tasks';
-    document.getElementById('tab-tasks').classList.add('active');
-    document.getElementById('tab-calendar').classList.remove('active');
-    document.getElementById('view-tasks').classList.remove('hidden');
-    document.getElementById('view-calendar').classList.add('hidden');
+  // Keep keyboard focus inside the active dialog and restore its trigger on close.
+  const dialogStack = [];
+  document.querySelectorAll('.modal-overlay').forEach((dialog) => {
+    let wasOpen = !dialog.classList.contains('hidden');
+    let trigger = null;
+    new MutationObserver(() => {
+      const open = !dialog.classList.contains('hidden');
+      if (open === wasOpen) return;
+      wasOpen = open;
+      if (open) {
+        trigger = document.activeElement;
+        dialogStack.push(dialog);
+        dialog.querySelector('button, input:not([type="hidden"]), select, textarea')?.focus();
+      } else {
+        const index = dialogStack.indexOf(dialog);
+        if (index !== -1) dialogStack.splice(index, 1);
+        if (trigger?.isConnected) trigger.focus();
+      }
+    }).observe(dialog, { attributes: true, attributeFilter: ['class'] });
   });
-
-  document.getElementById('tab-calendar').addEventListener('click', () => {
-    state.activeView = 'calendar';
-    document.getElementById('tab-calendar').classList.add('active');
-    document.getElementById('tab-tasks').classList.remove('active');
-    document.getElementById('view-calendar').classList.remove('hidden');
-    document.getElementById('view-tasks').classList.add('hidden');
-    renderCalendarSection();
+  document.addEventListener('keydown', (event) => {
+    const dialog = dialogStack.at(-1);
+    if (!dialog) return;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      dialog.querySelector('[id^="close-"]')?.click();
+    }
+    if (event.key === 'Tab') {
+      const controls = [...dialog.querySelectorAll('button, input, select, textarea, a[href], [tabindex="0"]')]
+        .filter(el => !el.disabled && el.getClientRects().length);
+      const first = controls[0], last = controls.at(-1);
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    }
+  });
+  document.querySelectorAll('[data-view]').forEach((button) => {
+    button.addEventListener('click', () => selectView(button.dataset.view));
+  });
+  document.querySelectorAll('[data-open-settings]').forEach((button) => {
+    button.addEventListener('click', () => {
+      openSettingsModal();
+      if (button.dataset.openSettings === 'connections') {
+        document.getElementById('btn-gcal-modal').scrollIntoView({ block: 'center' });
+      }
+    });
+  });
+  document.querySelectorAll('[data-source]').forEach((button) => {
+    button.addEventListener('click', () => {
+      state.sourceFilter = button.dataset.source;
+      document.getElementById('filter-source').value = state.sourceFilter;
+      selectView('tasks');
+      renderAll();
+    });
+  });
+  document.getElementById('toggle-sidebar').addEventListener('click', (event) => {
+    const collapsed = document.body.classList.toggle('sidebar-collapsed');
+    event.currentTarget.setAttribute('aria-expanded', String(!collapsed));
+    event.currentTarget.setAttribute('aria-label', collapsed ? 'Expand sidebar' : 'Collapse sidebar');
+  });
+  document.getElementById('filter-course').addEventListener('change', (event) => {
+    state.courseFilter = event.target.value;
+    renderTasksSection();
   });
 
   document.querySelectorAll('.subview-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
       state.subView = btn.getAttribute('data-subview');
-      document.querySelectorAll('.subview-btn').forEach((b) => b.classList.remove('active'));
+      document.querySelectorAll('.subview-btn').forEach((b) => { b.classList.remove('active'); b.setAttribute('aria-pressed', 'false'); });
       btn.classList.add('active');
+      btn.setAttribute('aria-pressed', 'true');
       renderTasksSection();
     });
   });
