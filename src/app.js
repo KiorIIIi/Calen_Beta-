@@ -1,7 +1,9 @@
 import { dayKey, groupByDeadline } from './deadlines.js';
 import {
+  GOOGLE_LOGIN_ENABLED,
   googleSignIn,
   getAccessToken,
+  setInMemoryAccessToken,
   logoutUser,
   subscribeAuth,
   subscribeUserWorkspace,
@@ -18,8 +20,12 @@ import {
 const STORAGE_KEYS = {
   TASKS: 'calen_html_tasks_v2',
   COURSES: 'calen_html_moodle_courses_v2',
-  SETTINGS: 'calen_html_settings_v2'
+  CLASSROOM_COURSES: 'calen_html_classroom_courses_v2',
+  SETTINGS: 'calen_html_settings_v2',
+  UPDATED_AT: 'calen_html_updated_at_v2'
 };
+
+const CLIENT_ID = `client-${Math.random().toString(36).slice(2, 10)}`;
 
 function offsetDateISO(daysOffset, hours = 23, minutes = 59) {
   const d = new Date();
@@ -141,24 +147,80 @@ const DEFAULT_MOODLE_COURSES = [
   }
 ];
 
+const DEFAULT_CLASSROOM_COURSES = [
+  {
+    id: 'classroom-aplit',
+    code: 'AP-LIT',
+    name: 'AP English Literature & Composition',
+    instructor: 'Ms. K. Morrison',
+    synced: true,
+    assignments: [
+      {
+        id: 'task-gc-1',
+        title: 'Essay Draft: Analysis of "The Great Gatsby" Character Arc',
+        priority: 'urgent',
+        status: 'in_progress',
+        source: 'google_classroom',
+        course: 'AP-LIT',
+        dueDate: offsetDateISO(0, 15, 59),
+        description: 'Google Docs attachment required via Google Classroom.',
+        subtasks: [
+          { id: 'gc1', title: 'Outline thesis & 3 textual citations', completed: true },
+          { id: 'gc2', title: 'Draft body paragraphs', completed: true },
+          { id: 'gc3', title: 'Peer review edits', completed: false },
+          { id: 'gc4', title: 'Turn in on Google Classroom', completed: false }
+        ]
+      }
+    ]
+  },
+  {
+    id: 'classroom-apush',
+    code: 'AP-USH',
+    name: 'AP United States History',
+    instructor: 'Mr. D. Lin',
+    synced: true,
+    assignments: [
+      {
+        id: 'task-gc-2',
+        title: 'DBQ Practice: Progressive Era Reform Movements',
+        priority: 'high',
+        status: 'todo',
+        source: 'google_classroom',
+        course: 'AP-USH',
+        dueDate: offsetDateISO(2, 9, 0),
+        description: 'Analyze 7 primary source documents and write full essay response.',
+        subtasks: [
+          { id: 'u1', title: 'Group documents into 3 buckets', completed: true },
+          { id: 'u2', title: 'Write contextualization & thesis', completed: false },
+          { id: 'u3', title: 'Complete HIPP sourcing for 4 docs', completed: false }
+        ]
+      }
+    ]
+  },
+  {
+    id: 'classroom-phys',
+    code: 'PHYS 7A',
+    name: 'Physics for Scientists and Engineers',
+    instructor: 'Prof. A. Lanzara',
+    synced: false,
+    assignments: [
+      {
+        id: 'task-gc-3',
+        title: 'Kinematics & Rotational Dynamics Problem Set',
+        priority: 'medium',
+        status: 'todo',
+        source: 'google_classroom',
+        course: 'PHYS 7A',
+        dueDate: offsetDateISO(4, 17, 0),
+        description: 'Upload worked solutions PDF to Google Classroom.',
+        subtasks: []
+      }
+    ]
+  }
+];
+
 function getInitialTasks() {
   const baseTasks = [
-    {
-      id: 'task-gc-1',
-      title: 'Essay Draft: Analysis of "The Great Gatsby" Character Arc',
-      priority: 'urgent',
-      status: 'in_progress',
-      source: 'google_classroom',
-      course: 'AP-LIT',
-      dueDate: offsetDateISO(0, 15, 59),
-      description: 'Google Docs attachment required via Google Classroom.',
-      subtasks: [
-        { id: 'gc1', title: 'Outline thesis & 3 textual citations', completed: true },
-        { id: 'gc2', title: 'Draft body paragraphs', completed: true },
-        { id: 'gc3', title: 'Peer review edits', completed: false },
-        { id: 'gc4', title: 'Turn in on Google Classroom', completed: false }
-      ]
-    },
     {
       id: 'task-tr-1',
       title: 'Submit Capstone Budget Approval Form to Department',
@@ -169,21 +231,6 @@ function getInitialTasks() {
       dueDate: offsetDateISO(-1, 9, 0),
       description: 'Sign PDF and attach to Trello Sprint card.',
       subtasks: []
-    },
-    {
-      id: 'task-gc-2',
-      title: 'DBQ Practice: Progressive Era Reform Movements',
-      priority: 'high',
-      status: 'todo',
-      source: 'google_classroom',
-      course: 'AP-USH',
-      dueDate: offsetDateISO(2, 9, 0),
-      description: 'Analyze 7 primary source documents and write full essay response.',
-      subtasks: [
-        { id: 'u1', title: 'Group documents into 3 buckets', completed: true },
-        { id: 'u2', title: 'Write contextualization & thesis', completed: false },
-        { id: 'u3', title: 'Complete HIPP sourcing for 4 docs', completed: false }
-      ]
     },
     {
       id: 'task-nt-1',
@@ -226,8 +273,11 @@ function getInitialTasks() {
   const syncedMoodleTasks = DEFAULT_MOODLE_COURSES.filter((c) => c.synced).flatMap(
     (c) => c.assignments
   );
+  const syncedClassroomTasks = DEFAULT_CLASSROOM_COURSES.filter((c) => c.synced).flatMap(
+    (c) => c.assignments
+  );
 
-  return [...syncedMoodleTasks, ...baseTasks];
+  return [...syncedMoodleTasks, ...syncedClassroomTasks, ...baseTasks];
 }
 
 // Application State
@@ -247,12 +297,19 @@ const state = {
   draftSubtasks: [],
   user: null,
   hasGcalToken: false,
+  serverOnline: false,
+  updatedAt: 0,
   unsubFirestore: null,
   pendingConfirmCallback: null,
   tasks: [],
   moodleCourses: [],
+  classroomCourses: [],
   settings: {
     theme: 'dark',
+    moodleUrl: 'https://moodle.university.edu',
+    moodleIcalUrl: '',
+    gcalIcalUrl: '',
+    classroomIcalUrl: '',
     platforms: {
       moodle: true,
       google_calendar: true,
@@ -273,14 +330,23 @@ function loadLocalState() {
       const decoded = JSON.parse(decodeURIComponent(escape(atob(encoded))));
       if (Array.isArray(decoded.tasks)) {
         localStorage.setItem(STORAGE_KEYS.TASKS, JSON.stringify(decoded.tasks));
+        localStorage.setItem(STORAGE_KEYS.UPDATED_AT, String(Date.now()));
       }
       window.history.replaceState(null, '', window.location.pathname);
     }
+
+    const rawUpdatedAt = localStorage.getItem(STORAGE_KEYS.UPDATED_AT);
+    state.updatedAt = rawUpdatedAt ? Number(rawUpdatedAt) || 0 : 0;
 
     const rawCourses = localStorage.getItem(STORAGE_KEYS.COURSES);
     state.moodleCourses = rawCourses
       ? JSON.parse(rawCourses)
       : structuredClone(DEFAULT_MOODLE_COURSES);
+
+    const rawClassroom = localStorage.getItem(STORAGE_KEYS.CLASSROOM_COURSES);
+    state.classroomCourses = rawClassroom
+      ? JSON.parse(rawClassroom)
+      : structuredClone(DEFAULT_CLASSROOM_COURSES);
 
     const rawTasks = localStorage.getItem(STORAGE_KEYS.TASKS);
     state.tasks = rawTasks ? JSON.parse(rawTasks) : getInitialTasks();
@@ -297,21 +363,137 @@ function loadLocalState() {
   } catch (e) {
     console.warn('Fallback to default state:', e);
     state.moodleCourses = structuredClone(DEFAULT_MOODLE_COURSES);
+    state.classroomCourses = structuredClone(DEFAULT_CLASSROOM_COURSES);
     state.tasks = getInitialTasks();
   }
 }
 
-function saveLocalState(broadcastUpdate = true) {
+async function pushWorkspaceToServer() {
+  try {
+    const res = await fetch('/api/workspace', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        clientId: CLIENT_ID,
+        updatedAt: state.updatedAt,
+        tasks: state.tasks,
+        moodleCourses: state.moodleCourses,
+        classroomCourses: state.classroomCourses,
+        settings: state.settings
+      })
+    });
+    if (res.ok) {
+      state.serverOnline = true;
+      renderWorkspaceShell();
+    }
+  } catch {
+    state.serverOnline = false;
+    renderWorkspaceShell();
+  }
+}
+
+async function pullWorkspaceFromServer() {
+  try {
+    const res = await fetch('/api/workspace', { cache: 'no-store' });
+    if (!res.ok) return;
+    const data = await res.json();
+    state.serverOnline = true;
+    const ws = data?.workspace;
+    if (ws && Array.isArray(ws.tasks)) {
+      if (!state.updatedAt || (ws.updatedAt && ws.updatedAt >= state.updatedAt)) {
+        state.tasks = ws.tasks;
+        if (Array.isArray(ws.moodleCourses) && ws.moodleCourses.length > 0) {
+          state.moodleCourses = ws.moodleCourses;
+        }
+        if (Array.isArray(ws.classroomCourses) && ws.classroomCourses.length > 0) {
+          state.classroomCourses = ws.classroomCourses;
+        }
+        if (ws.settings) {
+          state.settings = {
+            ...state.settings,
+            ...ws.settings,
+            platforms: { ...state.settings.platforms, ...(ws.settings.platforms || {}) }
+          };
+        }
+        state.updatedAt = ws.updatedAt || Date.now();
+        saveLocalState(false, false);
+        renderAll();
+      } else if (state.updatedAt > (ws.updatedAt || 0)) {
+        // Client has newer offline edits made while away — push them up to server!
+        await pushWorkspaceToServer();
+      }
+    } else {
+      // Server database is empty — seed it from current client state
+      if (!state.updatedAt) state.updatedAt = Date.now();
+      await pushWorkspaceToServer();
+    }
+  } catch {
+    state.serverOnline = false;
+    renderWorkspaceShell();
+  }
+}
+
+function initServerSync() {
+  pullWorkspaceFromServer();
+
+  // Real-time Server-Sent Events stream across localhost and https tunnel
+  if (typeof EventSource !== 'undefined') {
+    let es = null;
+    const connectSse = () => {
+      try {
+        es = new EventSource('/api/events');
+        es.onopen = () => {
+          state.serverOnline = true;
+          renderWorkspaceShell();
+        };
+        es.onmessage = (event) => {
+          try {
+            const msg = JSON.parse(event.data);
+            if (msg.type === 'workspace_updated' && msg.clientId !== CLIENT_ID) {
+              pullWorkspaceFromServer();
+            }
+          } catch {
+            // ignore malformed frame
+          }
+        };
+        es.onerror = () => {
+          state.serverOnline = false;
+          renderWorkspaceShell();
+        };
+      } catch {
+        // Offline mode fallback
+      }
+    };
+    connectSse();
+  }
+
+  window.addEventListener('online', () => {
+    pullWorkspaceFromServer();
+  });
+}
+
+function saveLocalState(broadcastUpdate = true, syncToServer = true) {
+  if (syncToServer) {
+    state.updatedAt = Date.now();
+  }
   localStorage.setItem(STORAGE_KEYS.TASKS, JSON.stringify(state.tasks));
   localStorage.setItem(STORAGE_KEYS.COURSES, JSON.stringify(state.moodleCourses));
+  localStorage.setItem(STORAGE_KEYS.CLASSROOM_COURSES, JSON.stringify(state.classroomCourses));
   localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(state.settings));
+  localStorage.setItem(STORAGE_KEYS.UPDATED_AT, String(state.updatedAt));
 
   if (broadcastUpdate && broadcast) {
     broadcast.postMessage({
       tasks: state.tasks,
       moodleCourses: state.moodleCourses,
-      settings: state.settings
+      classroomCourses: state.classroomCourses,
+      settings: state.settings,
+      updatedAt: state.updatedAt
     });
+  }
+
+  if (syncToServer) {
+    pushWorkspaceToServer();
   }
 }
 
@@ -437,6 +619,109 @@ function sortTasks(list) {
 }
 
 // ============================================================================
+//UNIVERSAL ICAL (.ICS) PARSER (RFC 5545 + LINE UNFOLDING + VALUE=DATE)
+// ============================================================================
+function parseIcsEvents(rawIcs, defaultSource = 'moodle', defaultCourse = 'iCal Sync') {
+  if (!rawIcs || typeof rawIcs !== 'string') return [];
+  // Unfold RFC 5545 folded lines
+  const unfolded = rawIcs.replace(/\r?\n[ \t]/g, '');
+  const blocks = unfolded.split('BEGIN:VEVENT').slice(1);
+  const events = [];
+
+  blocks.forEach((rawBlock, i) => {
+    const block = rawBlock.split('END:VEVENT')[0] || rawBlock;
+    const getField = (name) => {
+      const regex = new RegExp(`^${name}(?:;[^:]*)?:(.*)$`, 'im');
+      const m = block.match(regex);
+      return m ? m[1].trim() : '';
+    };
+
+    const rawSummary = getField('SUMMARY')
+      .replace(/\\,/g, ',')
+      .replace(/\\;/g, ';')
+      .replace(/\\n/gi, ' ')
+      .replace(/^\[Calen\]\s*/i, '');
+    const rawDesc = getField('DESCRIPTION')
+      .replace(/\\,/g, ',')
+      .replace(/\\;/g, ';')
+      .replace(/\\n/gi, '\n');
+    const rawCategories = getField('CATEGORIES').replace(/\\,/g, ',');
+    const rawUid = getField('UID') || `${Date.now()}-${i}`;
+    const dtStr = getField('DTEND') || getField('DTSTART') || getField('DUE');
+
+    let dueDate = offsetDateISO(2, 23, 59);
+    if (dtStr) {
+      const cleanDt = dtStr.trim();
+      if (/^\d{8}T\d{6}Z?$/i.test(cleanDt)) {
+        const y = cleanDt.slice(0, 4);
+        const mo = cleanDt.slice(4, 6);
+        const da = cleanDt.slice(6, 8);
+        const hr = cleanDt.slice(9, 11);
+        const mi = cleanDt.slice(11, 13);
+        const sc = cleanDt.slice(13, 15);
+        const suffix = cleanDt.endsWith('Z') ? 'Z' : '';
+        const parsed = new Date(`${y}-${mo}-${da}T${hr}:${mi}:${sc}${suffix}`);
+        if (!Number.isNaN(parsed.getTime())) dueDate = parsed.toISOString();
+      } else if (/^\d{8}$/.test(cleanDt)) {
+        // VALUE=DATE (all-day deadline) -> set to 23:59 on that date
+        const y = cleanDt.slice(0, 4);
+        const mo = cleanDt.slice(4, 6);
+        const da = cleanDt.slice(6, 8);
+        const parsed = new Date(`${y}-${mo}-${da}T23:59:00`);
+        if (!Number.isNaN(parsed.getTime())) dueDate = parsed.toISOString();
+      }
+    }
+
+    const safeUid = rawUid.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 40) || `${Date.now()}-${i}`;
+    const prefix =
+      defaultSource === 'google_calendar'
+        ? 'gcal'
+        : defaultSource === 'google_classroom'
+        ? 'gc-ical'
+        : 'mdl-ical';
+
+    events.push({
+      id: `${prefix}-${safeUid}`,
+      title: rawSummary || `${defaultCourse} Event #${i + 1}`,
+      priority: defaultSource === 'google_calendar' ? 'medium' : 'high',
+      status: 'todo',
+      source: defaultSource,
+      course: rawCategories || defaultCourse,
+      dueDate,
+      description: rawDesc || `Imported via ${defaultCourse} (.ics) feed`,
+      ...(defaultSource === 'google_calendar' ? { gcalEventId: safeUid } : {}),
+      subtasks: []
+    });
+  });
+
+  return events;
+}
+
+function mergeImportedTasks(importedTasks) {
+  let added = 0;
+  let updated = 0;
+  for (const item of importedTasks) {
+    const existing = state.tasks.find(
+      (t) =>
+        t.id === item.id ||
+        (item.gcalEventId && t.gcalEventId === item.gcalEventId) ||
+        (t.source === item.source && t.title === item.title && dayKey(t.dueDate) === dayKey(item.dueDate))
+    );
+    if (existing) {
+      existing.title = item.title;
+      existing.dueDate = item.dueDate;
+      if (item.description) existing.description = item.description;
+      if (item.course) existing.course = item.course;
+      updated++;
+    } else {
+      state.tasks.unshift(item);
+      added++;
+    }
+  }
+  return { added, updated };
+}
+
+// ============================================================================
 // RENDERING
 // ============================================================================
 function renderAll() {
@@ -457,6 +742,12 @@ function renderSettingsSyncStatus() {
     moodleBtnLabel.textContent = `Manage Courses (${syncedCount})`;
   }
 
+  const classroomSyncedCount = state.classroomCourses.filter((c) => c.synced).length;
+  const classroomBtnLabel = document.getElementById('classroom-btn-label');
+  if (classroomBtnLabel) {
+    classroomBtnLabel.textContent = `Manage Classes (${classroomSyncedCount})`;
+  }
+
   const gcalSyncedCount = state.tasks.filter(
     (t) => t.source === 'google_calendar' || Boolean(t.gcalEventId)
   ).length;
@@ -468,7 +759,19 @@ function renderSettingsSyncStatus() {
 
   const modalCloudText = document.getElementById('modal-cloud-login-text');
   const syncSub = document.getElementById('sync-cloud-subtitle');
-  if (state.user) {
+  const cloudBtn = document.getElementById('btn-modal-cloud-login');
+  if (!GOOGLE_LOGIN_ENABLED) {
+    if (cloudBtn) {
+      cloudBtn.disabled = true;
+      cloudBtn.setAttribute('aria-disabled', 'true');
+    }
+    if (modalCloudText) modalCloudText.textContent = 'Google Login (Unavailable)';
+    if (syncSub) {
+      syncSub.textContent = state.serverOnline
+        ? 'Connected to Local Server DB — localhost, HTTPS tunnel, and offline cache are synced seamlessly.'
+        : 'Offline Cache Active — viewing saved calendar data on this device. Will sync when server is reachable.';
+    }
+  } else if (state.user) {
     if (modalCloudText) modalCloudText.textContent = 'Sign out of Google';
     if (syncSub)
       syncSub.textContent = `Signed in as ${state.user.email} — live Firestore sync active`;
@@ -679,8 +982,10 @@ function selectView(view) {
 function renderWorkspaceShell() {
   const date = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', weekday: 'long', month: 'long', day: 'numeric' }).format(new Date());
   document.getElementById('tasks-subtitle').textContent = `${date} · Your deadlines, in one place`;
-  document.getElementById('workspace-account').textContent = state.user?.displayName || state.user?.email || 'Local workspace';
-  document.getElementById('workspace-account-status').textContent = state.user ? 'Google account connected' : 'Saved on this device';
+  document.getElementById('workspace-account').textContent = state.user?.displayName || state.user?.email || 'Personal calendar';
+  document.getElementById('workspace-account-status').textContent = state.serverOnline
+    ? 'Live Server + Offline Sync'
+    : 'Offline Device Cache';
   document.querySelectorAll('[data-source]').forEach((button) => {
     button.classList.toggle('active', button.dataset.source === state.sourceFilter);
     button.setAttribute('aria-pressed', String(button.dataset.source === state.sourceFilter));
@@ -998,7 +1303,7 @@ function renderCalendarSection() {
 }
 
 // ============================================================================
-// TASK MUTATIONS + FIREBASE PERSISTENCE
+// TASK MUTATIONS + SERVER/LOCAL/FIREBSAE PERSISTENCE
 // ============================================================================
 async function persistTask(task) {
   saveLocalState();
@@ -1069,8 +1374,8 @@ function closeGcalConfirmation() {
 // ============================================================================
 // GOOGLE CALENDAR SYNC HUB LOGIC
 // ============================================================================
-function showGcalFeedback(msg, isError = false) {
-  const box = document.getElementById('gcal-feedback-box');
+function showFeedbackBox(elementId, msg, isError = false) {
+  const box = document.getElementById(elementId);
   if (!box) return;
   box.classList.remove('hidden');
   box.style.backgroundColor = isError ? 'var(--rose-bg)' : 'var(--sage-bg)';
@@ -1079,11 +1384,27 @@ function showGcalFeedback(msg, isError = false) {
   box.textContent = msg;
 }
 
+function showGcalFeedback(msg, isError = false) {
+  showFeedbackBox('gcal-feedback-box', msg, isError);
+}
+
 async function ensureGoogleCalendarToken() {
   const token = await getAccessToken();
   if (token) {
     state.hasGcalToken = true;
     return token;
+  }
+  const manualInput = document.getElementById('gcal-manual-token')?.value?.trim();
+  if (manualInput) {
+    setInMemoryAccessToken(manualInput);
+    state.hasGcalToken = true;
+    renderAll();
+    return manualInput;
+  }
+  if (!GOOGLE_LOGIN_ENABLED) {
+    throw new Error(
+      'Google Sign-In is disabled for now. Use "Sync iCal Feed" / "Download .ics" above, or paste a Google Calendar OAuth token in the token field.'
+    );
   }
   const res = await googleSignIn();
   if (res?.accessToken) {
@@ -1100,16 +1421,30 @@ function renderGcalModalContent() {
   const descEl = document.getElementById('gcal-auth-status-desc');
   const btnTextEl = document.getElementById('gcal-signin-btn-text');
   const listEl = document.getElementById('gcal-synced-list');
+  const exportUrlInput = document.getElementById('gcal-export-ics-url');
+  const icalUrlInput = document.getElementById('gcal-ical-url');
+
+  if (exportUrlInput) {
+    exportUrlInput.value = `${window.location.origin}/api/calendar.ics`;
+  }
+  if (icalUrlInput && !icalUrlInput.value && state.settings.gcalIcalUrl) {
+    icalUrlInput.value = state.settings.gcalIcalUrl;
+  }
+
   if (!titleEl || !descEl || !btnTextEl || !listEl) return;
 
-  if (state.user && state.hasGcalToken) {
+  if (!GOOGLE_LOGIN_ENABLED) {
+    titleEl.textContent = state.hasGcalToken
+      ? 'Google Calendar API Token Active'
+      : 'Google Sign-In Disabled for Now';
+    descEl.textContent = state.hasGcalToken
+      ? 'In-memory OAuth token loaded — ready for two-way API sync'
+      : 'Use iCal (.ics) URL sync & phone calendar subscription below, or paste an API token';
+    btnTextEl.textContent = 'Google Login (Unavailable)';
+  } else if (state.user && state.hasGcalToken) {
     titleEl.textContent = 'Google Calendar Connected';
     descEl.textContent = `Authorized as ${state.user.email} — ready for two-way event sync`;
     btnTextEl.textContent = 'Reconnect Google';
-  } else if (state.user && !state.hasGcalToken) {
-    titleEl.textContent = 'Authorize Google Calendar Session';
-    descEl.textContent = `Signed in as ${state.user.email} — click Sign in with Google to activate Calendar API access`;
-    btnTextEl.textContent = 'Sign in with Google';
   } else {
     titleEl.textContent = 'Connect Google Calendar';
     descEl.textContent = 'Sign in with Google to authorize Calendar event sync';
@@ -1123,7 +1458,7 @@ function renderGcalModalContent() {
   if (syncedTasks.length === 0) {
     listEl.innerHTML = `
       <div style="padding:16px 0;color:var(--text-muted);font-size:13px;">
-        No Google Calendar events synced yet. Use "Import Upcoming Events" or "Push Pending Deadlines" above.
+        No Google Calendar events synced yet. Paste your Google Calendar iCal (.ics) URL above or use API import/export.
       </div>
     `;
     return;
@@ -1146,7 +1481,7 @@ function renderGcalModalContent() {
             task.gcalEventId
               ? `<button type="button" class="hdr-btn" data-remove-gcal-id="${escapeHtml(
                   task.id
-                )}" style="height:28px;padding:0 10px;font-size:11.5px;color:var(--rose-text);border-color:var(--rose-border);background:var(--rose-bg);">Delete from Google</button>`
+                )}" style="height:28px;padding:0 10px;font-size:11.5px;color:var(--rose-text);border-color:var(--rose-border);background:var(--rose-bg);">Remove</button>`
               : ''
           }
         </div>
@@ -1158,19 +1493,21 @@ function renderGcalModalContent() {
     btn.addEventListener('click', () => {
       const taskId = btn.getAttribute('data-remove-gcal-id');
       const task = state.tasks.find((t) => t.id === taskId);
-      if (!task || !task.gcalEventId) return;
+      if (!task) return;
 
       const due = formatDueDate(task.dueDate);
       openGcalConfirmation({
-        title: 'Delete Event from Google Calendar?',
+        title: 'Remove Google Calendar Event?',
         description:
-          'Are you sure you want to permanently delete this event from your primary Google Calendar?',
+          'Remove this synced event from Calen (and from Google Calendar if an API token is active)?',
         items: [{ title: task.title, meta: due.text }],
-        confirmLabel: 'Delete from Google Calendar',
+        confirmLabel: 'Remove Event',
         onConfirm: async () => {
           try {
-            await ensureGoogleCalendarToken();
-            await deleteGoogleCalendarEvent(task.gcalEventId);
+            const token = await getAccessToken();
+            if (token && task.gcalEventId) {
+              await deleteGoogleCalendarEvent(task.gcalEventId);
+            }
             if (task.source === 'google_calendar') {
               state.tasks = state.tasks.filter((t) => t.id !== task.id);
               if (state.user) await deleteTaskFromFirestore(state.user.uid, task.id);
@@ -1180,9 +1517,9 @@ function renderGcalModalContent() {
             }
             saveLocalState();
             renderAll();
-            showGcalFeedback(`Deleted "${task.title}" from your Google Calendar.`);
+            showGcalFeedback(`Removed "${task.title}".`);
           } catch (err) {
-            showGcalFeedback(err.message || 'Failed to delete Google Calendar event.', true);
+            showGcalFeedback(err.message || 'Failed to remove Google Calendar event.', true);
           }
         }
       });
@@ -1195,6 +1532,79 @@ function openGcalModal() {
   if (box) box.classList.add('hidden');
   renderGcalModalContent();
   document.getElementById('modal-gcal').classList.remove('hidden');
+}
+
+async function handleGcalIcalUrlSync() {
+  const urlInput = document.getElementById('gcal-ical-url');
+  const url = urlInput?.value?.trim();
+  if (!url) {
+    showGcalFeedback('Please paste your Google Calendar Secret address in iCal (.ics) format.', true);
+    return;
+  }
+  try {
+    showGcalFeedback('Fetching Google Calendar iCal (.ics) feed via local server...');
+    const res = await fetch('/api/proxy/ical', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url })
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      throw new Error(data.error || 'Failed to fetch Google Calendar iCal URL.');
+    }
+    const events = parseIcsEvents(data.ics, 'google_calendar', 'Google Calendar');
+    const { added, updated } = mergeImportedTasks(events);
+    state.settings.gcalIcalUrl = url;
+    saveLocalState();
+    renderAll();
+    showGcalFeedback(
+      `Synced ${events.length} Google Calendar event(s) (${added} new, ${updated} updated).`
+    );
+  } catch (err) {
+    showGcalFeedback(err.message || 'Could not sync Google Calendar iCal feed.', true);
+  }
+}
+
+function downloadClientIcsFile() {
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+  const lines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Calen//Unified Academic Planner//EN',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+    'X-WR-CALNAME:Calen Deadlines',
+    'X-WR-TIMEZONE:Asia/Manila'
+  ];
+  for (const task of state.tasks) {
+    if (!task.dueDate) continue;
+    const endDt = new Date(task.dueDate);
+    if (Number.isNaN(endDt.getTime())) continue;
+    const startDt = new Date(endDt.getTime() - 60 * 60 * 1000);
+    const dtStart = startDt.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+    const dtEnd = endDt.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+    const title = `${task.status === 'completed' ? '[Done] ' : ''}${
+      task.course ? `[${task.course}] ` : ''
+    }${task.title}`.replace(/[,;\\]/g, ' ');
+    lines.push(
+      'BEGIN:VEVENT',
+      `UID:${task.id}@calen.local`,
+      `DTSTAMP:${stamp}`,
+      `DTSTART:${dtStart}`,
+      `DTEND:${dtEnd}`,
+      `SUMMARY:${title}`,
+      'END:VEVENT'
+    );
+  }
+  lines.push('END:VCALENDAR');
+  const blob = new Blob([lines.join('\r\n')], { type: 'text/calendar;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'calen-deadlines.ics';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  showGcalFeedback('Downloaded calen-deadlines.ics! Import it into Google Calendar or your phone calendar.');
 }
 
 async function handleGcalImport() {
@@ -1287,7 +1697,7 @@ function handleGcalBulkExportPrompt() {
 }
 
 // ============================================================================
-// OTHER MODALS LOGIC
+// OTHER MODALS LOGIC (TASK, MOODLE, CLASSROOM, SETTINGS)
 // ============================================================================
 function openNewTaskModal(prefillDateStr = null) {
   state.editingTaskId = null;
@@ -1390,7 +1800,10 @@ function renderDraftSubtasks() {
   });
 }
 
-function openMoodleModal() {
+// ============================================================================
+// MOODLE LMS MODAL & SYNC
+// ============================================================================
+function renderMoodleCoursesList() {
   const listEl = document.getElementById('moodle-courses-list');
   if (!listEl) return;
 
@@ -1424,12 +1837,98 @@ function openMoodleModal() {
       const course = state.moodleCourses.find((c) => c.id === chk.value);
       if (course) {
         course.synced = chk.checked;
-        openMoodleModal();
+        renderMoodleCoursesList();
       }
     });
   });
+}
 
+function openMoodleModal() {
+  const box = document.getElementById('moodle-feedback-box');
+  if (box) box.classList.add('hidden');
+  const urlInput = document.getElementById('moodle-url');
+  if (urlInput && state.settings.moodleUrl) {
+    urlInput.value = state.settings.moodleUrl;
+  }
+  const icalUrlInput = document.getElementById('moodle-ical-url');
+  if (icalUrlInput && state.settings.moodleIcalUrl) {
+    icalUrlInput.value = state.settings.moodleIcalUrl;
+  }
+  renderMoodleCoursesList();
   document.getElementById('modal-moodle').classList.remove('hidden');
+}
+
+async function handleFetchMoodleApi() {
+  const moodleUrl = document.getElementById('moodle-url')?.value?.trim();
+  const token = document.getElementById('moodle-token')?.value?.trim();
+  if (!moodleUrl || !token) {
+    showFeedbackBox('moodle-feedback-box', 'Enter your Moodle URL and WebService token.', true);
+    return;
+  }
+  if (moodleUrl.includes('moodle.university.edu') || token === 'mdl_ws_98f4a21c7e3b') {
+    showFeedbackBox(
+      'moodle-feedback-box',
+      'Demo Moodle credentials detected — synced the built-in Moodle courses below. Replace with your school Moodle URL & token or paste your Moodle Calendar iCal URL below for live school data!'
+    );
+    return;
+  }
+
+  try {
+    showFeedbackBox('moodle-feedback-box', 'Connecting to Moodle REST API via local server...');
+    const res = await fetch('/api/proxy/moodle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ moodleUrl, token })
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      throw new Error(data.error || 'Failed to connect to Moodle REST API.');
+    }
+    if (Array.isArray(data.courses) && data.courses.length > 0) {
+      state.moodleCourses = data.courses;
+      state.settings.moodleUrl = moodleUrl;
+      renderMoodleCoursesList();
+      showFeedbackBox(
+        'moodle-feedback-box',
+        `Connected to ${data.siteName || 'Moodle'}! Loaded ${data.courses.length} enrolled course(s). Click "Sync Selected Courses" to save.`
+      );
+    } else {
+      showFeedbackBox('moodle-feedback-box', 'Connected to Moodle, but no active courses were returned.', true);
+    }
+  } catch (err) {
+    showFeedbackBox('moodle-feedback-box', err.message || 'Moodle API request failed.', true);
+  }
+}
+
+async function handleFetchMoodleIcalUrl() {
+  const url = document.getElementById('moodle-ical-url')?.value?.trim();
+  if (!url) {
+    showFeedbackBox('moodle-feedback-box', 'Please paste your Moodle Calendar Export (.ics) URL.', true);
+    return;
+  }
+  try {
+    showFeedbackBox('moodle-feedback-box', 'Fetching Moodle iCal (.ics) feed via local server...');
+    const res = await fetch('/api/proxy/ical', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url })
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      throw new Error(data.error || 'Failed to fetch Moodle iCal feed.');
+    }
+    const events = parseIcsEvents(data.ics, 'moodle', 'Moodle iCal');
+    const { added, updated } = mergeImportedTasks(events);
+    state.settings.moodleIcalUrl = url;
+    saveLocalState();
+    renderAll();
+    showFeedbackBox(
+      'moodle-feedback-box',
+      `Synced ${events.length} Moodle deadline(s) (${added} new, ${updated} updated)!`
+    );
+  } catch (err) {
+    showFeedbackBox('moodle-feedback-box', err.message || 'Failed to sync Moodle iCal URL.', true);
+  }
 }
 
 async function applyMoodleCourseSync() {
@@ -1465,6 +1964,157 @@ async function applyMoodleCourseSync() {
   document.getElementById('modal-moodle').classList.add('hidden');
 }
 
+// ============================================================================
+// GOOGLE CLASSROOM MODAL & SYNC
+// ============================================================================
+function renderClassroomCoursesList() {
+  const listEl = document.getElementById('classroom-courses-list');
+  if (!listEl) return;
+
+  listEl.innerHTML = state.classroomCourses
+    .map(
+      (course) => `
+      <label class="course-item" data-classroom-id="${escapeHtml(course.id)}">
+        <div style="display:flex;align-items:center;gap:12px;">
+          <input type="checkbox" class="classroom-course-chk" value="${escapeHtml(course.id)}" ${
+            course.synced ? 'checked' : ''
+          } />
+          <div>
+            <div style="font-weight:600;font-size:13.5px;">${escapeHtml(
+              course.code
+            )} — ${escapeHtml(course.name)}</div>
+            <div style="font-size:12px;color:var(--text-secondary);">${escapeHtml(
+              course.instructor
+            )} · ${course.assignments?.length || 0} coursework items</div>
+          </div>
+        </div>
+        <span class="badge ${course.synced ? 'badge-sage' : 'badge-stone'}">${
+          course.synced ? 'Synced' : 'Available'
+        }</span>
+      </label>
+    `
+    )
+    .join('');
+
+  listEl.querySelectorAll('.classroom-course-chk').forEach((chk) => {
+    chk.addEventListener('change', () => {
+      const course = state.classroomCourses.find((c) => c.id === chk.value);
+      if (course) {
+        course.synced = chk.checked;
+        renderClassroomCoursesList();
+      }
+    });
+  });
+}
+
+function openClassroomModal() {
+  const box = document.getElementById('classroom-feedback-box');
+  if (box) box.classList.add('hidden');
+  const icalInput = document.getElementById('classroom-ical-url');
+  if (icalInput && state.settings.classroomIcalUrl) {
+    icalInput.value = state.settings.classroomIcalUrl;
+  }
+  renderClassroomCoursesList();
+  document.getElementById('modal-classroom').classList.remove('hidden');
+}
+
+async function handleClassroomIcalSync() {
+  const url = document.getElementById('classroom-ical-url')?.value?.trim();
+  if (!url) {
+    showFeedbackBox(
+      'classroom-feedback-box',
+      'Paste your Google Classroom Calendar iCal (.ics) URL (from Google Calendar -> Settings for class calendar -> Secret address in iCal format).',
+      true
+    );
+    return;
+  }
+  try {
+    showFeedbackBox('classroom-feedback-box', 'Fetching Google Classroom iCal feed...');
+    const res = await fetch('/api/proxy/ical', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url })
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      throw new Error(data.error || 'Failed to fetch Classroom iCal feed.');
+    }
+    const events = parseIcsEvents(data.ics, 'google_classroom', 'Google Classroom');
+    const { added, updated } = mergeImportedTasks(events);
+    state.settings.classroomIcalUrl = url;
+    saveLocalState();
+    renderAll();
+    showFeedbackBox(
+      'classroom-feedback-box',
+      `Synced ${events.length} Google Classroom assignment(s) (${added} new, ${updated} updated)!`
+    );
+  } catch (err) {
+    showFeedbackBox('classroom-feedback-box', err.message || 'Classroom iCal sync failed.', true);
+  }
+}
+
+async function handleFetchClassroomApi() {
+  const accessToken = document.getElementById('classroom-api-token')?.value?.trim();
+  if (!accessToken) {
+    showFeedbackBox(
+      'classroom-feedback-box',
+      'Paste a Google OAuth Bearer token with Classroom read scopes.',
+      true
+    );
+    return;
+  }
+  try {
+    showFeedbackBox('classroom-feedback-box', 'Fetching courses & coursework from Google Classroom API...');
+    const res = await fetch('/api/proxy/classroom', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accessToken })
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      throw new Error(data.error || 'Failed to fetch Google Classroom courses.');
+    }
+    if (Array.isArray(data.courses) && data.courses.length > 0) {
+      state.classroomCourses = data.courses;
+      renderClassroomCoursesList();
+      showFeedbackBox(
+        'classroom-feedback-box',
+        `Loaded ${data.courses.length} active Google Classroom course(s)! Click "Sync Selected Classes" to save.`
+      );
+    } else {
+      showFeedbackBox('classroom-feedback-box', 'No active Google Classroom courses found for this account.', true);
+    }
+  } catch (err) {
+    showFeedbackBox('classroom-feedback-box', err.message || 'Classroom API request failed.', true);
+  }
+}
+
+function applyClassroomCourseSync() {
+  const syncedCodes = new Set(state.classroomCourses.filter((c) => c.synced).map((c) => c.code));
+
+  const nonCourseClassroomTasks = state.tasks.filter(
+    (t) =>
+      t.source !== 'google_classroom' ||
+      (!t.id.startsWith('task-gc-') && !t.id.startsWith('gc-work-') && syncedCodes.has(t.course))
+  );
+
+  const courseAssignments = state.classroomCourses
+    .filter((c) => c.synced)
+    .flatMap((c) => c.assignments || []);
+
+  const mergedMap = new Map();
+  nonCourseClassroomTasks.forEach((t) => mergedMap.set(t.id, t));
+  courseAssignments.forEach((t) => {
+    const existing = state.tasks.find((ex) => ex.id === t.id);
+    mergedMap.set(t.id, existing || t);
+  });
+
+  state.tasks = Array.from(mergedMap.values());
+  saveLocalState();
+  renderAll();
+  document.getElementById('modal-classroom').classList.add('hidden');
+}
+
 function openSettingsModal() {
   renderSettingsSyncStatus();
 
@@ -1478,14 +2128,14 @@ function openSettingsModal() {
     moodleToggle.checked = state.settings.platforms.moodle !== false;
   }
 
+  const classroomToggle = document.getElementById('toggle-plat-classroom');
+  if (classroomToggle) {
+    classroomToggle.checked = state.settings.platforms.google_classroom !== false;
+  }
+
   const listEl = document.getElementById('settings-integrations-list');
   if (listEl) {
     const platforms = [
-      {
-        key: 'google_classroom',
-        name: 'Google Classroom',
-        desc: 'Sync coursework and essay deadlines'
-      },
       {
         key: 'notion',
         name: 'Notion Workspace',
@@ -1553,7 +2203,7 @@ function initEvents() {
       if (open) {
         trigger = document.activeElement;
         dialogStack.push(dialog);
-        dialog.querySelector('button, input:not([type="hidden"]), select, textarea')?.focus();
+        dialog.querySelector('button:not([disabled]), input:not([type="hidden"]), select, textarea')?.focus();
       } else {
         const index = dialogStack.indexOf(dialog);
         if (index !== -1) dialogStack.splice(index, 1);
@@ -1663,6 +2313,7 @@ function initEvents() {
   document.getElementById('btn-settings-modal').addEventListener('click', openSettingsModal);
   document.getElementById('btn-gcal-modal').addEventListener('click', openGcalModal);
   document.getElementById('btn-moodle-modal').addEventListener('click', openMoodleModal);
+  document.getElementById('btn-classroom-modal').addEventListener('click', openClassroomModal);
 
   document.getElementById('toggle-plat-gcal').addEventListener('change', async (e) => {
     state.settings.platforms.google_calendar = e.target.checked;
@@ -1682,6 +2333,15 @@ function initEvents() {
     }
   });
 
+  document.getElementById('toggle-plat-classroom').addEventListener('change', async (e) => {
+    state.settings.platforms.google_classroom = e.target.checked;
+    saveLocalState();
+    renderAll();
+    if (state.user) {
+      await saveSettingsToFirestore(state.user.uid, state.settings);
+    }
+  });
+
   document.getElementById('btn-theme-quick').addEventListener('click', async () => {
     const isCurrentlyDark = document.documentElement.classList.contains('dark');
     state.settings.theme = isCurrentlyDark ? 'light' : 'dark';
@@ -1693,6 +2353,7 @@ function initEvents() {
   });
 
   const handleCloudAuthClick = async () => {
+    if (!GOOGLE_LOGIN_ENABLED) return;
     try {
       if (state.user) {
         await logoutUser();
@@ -1718,6 +2379,7 @@ function initEvents() {
     document.getElementById('modal-gcal').classList.add('hidden');
   });
   document.getElementById('btn-gcal-google-signin').addEventListener('click', async () => {
+    if (!GOOGLE_LOGIN_ENABLED) return;
     try {
       const res = await googleSignIn();
       if (res?.accessToken) {
@@ -1729,6 +2391,27 @@ function initEvents() {
     } catch (err) {
       showGcalFeedback(err.message || 'Google Sign-In failed.', true);
     }
+  });
+  document.getElementById('btn-gcal-ical-sync').addEventListener('click', handleGcalIcalUrlSync);
+  document.getElementById('btn-copy-ics-url').addEventListener('click', () => {
+    const input = document.getElementById('gcal-export-ics-url');
+    navigator.clipboard?.writeText(input.value);
+    showGcalFeedback('Copied live iCal (.ics) feed URL! Add it in Google Calendar -> "From URL".');
+  });
+  document.getElementById('btn-download-ics').addEventListener('click', downloadClientIcsFile);
+  document.getElementById('btn-gcal-save-token').addEventListener('click', () => {
+    const token = document.getElementById('gcal-manual-token')?.value?.trim();
+    if (!token) {
+      setInMemoryAccessToken(null);
+      state.hasGcalToken = false;
+      renderAll();
+      showGcalFeedback('Cleared in-memory Google Calendar API token.');
+      return;
+    }
+    setInMemoryAccessToken(token);
+    state.hasGcalToken = true;
+    renderAll();
+    showGcalFeedback('In-memory Google Calendar API token set! You can now use Import/Push via API.');
   });
   document.getElementById('btn-gcal-import').addEventListener('click', handleGcalImport);
   document.getElementById('btn-gcal-export').addEventListener('click', handleGcalBulkExportPrompt);
@@ -1884,48 +2567,24 @@ function initEvents() {
     }
   });
 
+  // Moodle Modal Listeners
   document.getElementById('close-moodle-modal').addEventListener('click', () => {
     document.getElementById('modal-moodle').classList.add('hidden');
   });
+  document.getElementById('btn-fetch-moodle-api').addEventListener('click', handleFetchMoodleApi);
+  document.getElementById('btn-fetch-moodle-ical-url').addEventListener('click', handleFetchMoodleIcalUrl);
   document.getElementById('btn-save-moodle').addEventListener('click', applyMoodleCourseSync);
 
   document.getElementById('btn-parse-ical').addEventListener('click', async () => {
     const raw = document.getElementById('moodle-ical-input').value.trim();
-    if (!raw) return;
+    if (!raw) {
+      showFeedbackBox('moodle-feedback-box', 'Paste VEVENT / VCALENDAR text first.', true);
+      return;
+    }
 
-    const blocks = raw.split('BEGIN:VEVENT').slice(1);
-    const imported = [];
-    blocks.forEach((b, i) => {
-      const summaryMatch = b.match(/SUMMARY:(.*)/);
-      const dtMatch =
-        b.match(/DTEND(?:;[^:]*)?:(\d{8}T\d{6}Z?)/) ||
-        b.match(/DTSTART(?:;[^:]*)?:(\d{8}T\d{6}Z?)/);
-      const title = summaryMatch ? summaryMatch[1].trim() : `Moodle Event #${i + 1}`;
-      let dueDate = offsetDateISO(2, 23, 59);
-      if (dtMatch) {
-        const s = dtMatch[1];
-        const iso = `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}T${s.slice(
-          9,
-          11
-        )}:${s.slice(11, 13)}:00Z`;
-        const parsed = new Date(iso);
-        if (!Number.isNaN(parsed.getTime())) dueDate = parsed.toISOString();
-      }
-      imported.push({
-        id: `mdl-ical-${Date.now()}-${i}`,
-        title,
-        priority: 'high',
-        status: 'todo',
-        source: 'moodle',
-        course: 'Moodle iCal',
-        dueDate,
-        description: 'Imported via Moodle iCal (.ics) feed',
-        subtasks: []
-      });
-    });
-
+    const imported = parseIcsEvents(raw, 'moodle', 'Moodle iCal');
     if (imported.length > 0) {
-      state.tasks = [...imported, ...state.tasks];
+      const { added, updated } = mergeImportedTasks(imported);
       document.getElementById('moodle-ical-input').value = '';
       saveLocalState();
       renderAll();
@@ -1934,9 +2593,22 @@ function initEvents() {
           await saveTaskToFirestore(state.user.uid, t);
         }
       }
-      document.getElementById('modal-moodle').classList.add('hidden');
+      showFeedbackBox(
+        'moodle-feedback-box',
+        `Imported ${imported.length} Moodle iCal event(s) (${added} new, ${updated} updated)!`
+      );
+    } else {
+      showFeedbackBox('moodle-feedback-box', 'No valid VEVENT blocks found in pasted text.', true);
     }
   });
+
+  // Classroom Modal Listeners
+  document.getElementById('close-classroom-modal').addEventListener('click', () => {
+    document.getElementById('modal-classroom').classList.add('hidden');
+  });
+  document.getElementById('btn-classroom-ical-sync').addEventListener('click', handleClassroomIcalSync);
+  document.getElementById('btn-fetch-classroom-api').addEventListener('click', handleFetchClassroomApi);
+  document.getElementById('btn-save-classroom').addEventListener('click', applyClassroomCourseSync);
 
   document.getElementById('close-settings-modal').addEventListener('click', () => {
     document.getElementById('modal-settings').classList.add('hidden');
@@ -1958,6 +2630,7 @@ function initEvents() {
 
   document.getElementById('btn-reset-demo').addEventListener('click', async () => {
     state.moodleCourses = structuredClone(DEFAULT_MOODLE_COURSES);
+    state.classroomCourses = structuredClone(DEFAULT_CLASSROOM_COURSES);
     state.tasks = getInitialTasks();
     saveLocalState();
     renderAll();
@@ -1986,8 +2659,10 @@ function initEvents() {
     broadcast.onmessage = (event) => {
       if (event.data?.tasks) state.tasks = event.data.tasks;
       if (event.data?.moodleCourses) state.moodleCourses = event.data.moodleCourses;
+      if (event.data?.classroomCourses) state.classroomCourses = event.data.classroomCourses;
       if (event.data?.settings) state.settings = event.data.settings;
-      saveLocalState(false);
+      if (event.data?.updatedAt) state.updatedAt = event.data.updatedAt;
+      saveLocalState(false, false);
       renderAll();
     };
   }
@@ -2039,3 +2714,4 @@ function initEvents() {
 loadLocalState();
 initEvents();
 renderAll();
+initServerSync();

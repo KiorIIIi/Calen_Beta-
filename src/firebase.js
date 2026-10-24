@@ -3,7 +3,6 @@ import {
   getAuth,
   GoogleAuthProvider,
   signInWithPopup,
-  signOut,
   onAuthStateChanged
 } from 'firebase/auth';
 import {
@@ -22,8 +21,15 @@ const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 export const auth = getAuth(app);
 
+// Google Login is temporarily disabled for initial launch preparation
+export const GOOGLE_LOGIN_ENABLED = false;
+
 // Google Workspace OAuth Scopes
-export const SCOPES = ['https://www.googleapis.com/auth/calendar.events'];
+export const SCOPES = [
+  'https://www.googleapis.com/auth/calendar.events',
+  'https://www.googleapis.com/auth/classroom.courses.readonly',
+  'https://www.googleapis.com/auth/classroom.coursework.me.readonly'
+];
 
 const provider = new GoogleAuthProvider();
 SCOPES.forEach((scope) => provider.addScope(scope));
@@ -73,13 +79,20 @@ async function testConnection() {
       error instanceof Error &&
       error.message.includes('the client is offline')
     ) {
-      console.error('Please check your Firebase configuration.');
+      console.warn('Firestore offline — using Local Server + LocalStorage sync.');
     }
   }
 }
-testConnection();
+if (GOOGLE_LOGIN_ENABLED) {
+  testConnection();
+}
 
 export async function googleSignIn() {
+  if (!GOOGLE_LOGIN_ENABLED) {
+    throw new Error(
+      'Login with Google is currently disabled. Use iCal (.ics) feed sync or paste an in-memory API token below.'
+    );
+  }
   try {
     isSigningIn = true;
     const result = await signInWithPopup(auth, provider);
@@ -99,6 +112,11 @@ export async function googleSignIn() {
 
 export const loginWithGoogle = googleSignIn;
 
+export function setInMemoryAccessToken(token) {
+  cachedAccessToken = token ? String(token).trim() : null;
+  return cachedAccessToken;
+}
+
 export async function getAccessToken() {
   return cachedAccessToken;
 }
@@ -109,6 +127,11 @@ export async function logoutUser() {
 }
 
 export function initAuth(onAuthSuccess, onAuthFailure, onUserChanged) {
+  if (!GOOGLE_LOGIN_ENABLED) {
+    if (onUserChanged) onUserChanged(null);
+    if (onAuthFailure) onAuthFailure(null);
+    return () => {};
+  }
   return onAuthStateChanged(auth, async (user) => {
     if (onUserChanged) onUserChanged(user);
     if (user) {
