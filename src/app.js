@@ -402,10 +402,10 @@ async function pullWorkspaceFromServer() {
     if (ws && Array.isArray(ws.tasks)) {
       if (!state.updatedAt || (ws.updatedAt && ws.updatedAt >= state.updatedAt)) {
         state.tasks = ws.tasks;
-        if (Array.isArray(ws.moodleCourses) && ws.moodleCourses.length > 0) {
+        if (Array.isArray(ws.moodleCourses)) {
           state.moodleCourses = ws.moodleCourses;
         }
-        if (Array.isArray(ws.classroomCourses) && ws.classroomCourses.length > 0) {
+        if (Array.isArray(ws.classroomCourses)) {
           state.classroomCourses = ws.classroomCourses;
         }
         if (ws.settings) {

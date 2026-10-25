@@ -84,3 +84,6 @@ Log dated entries here when you make non-trivial decisions, discover facts, or l
 
 ### 2026-10-23
 - Created `doc/` documentation set (README, TECH-STACK, ARCHITECTURE, DATA-MODEL) by reading the full source. Confirmed React/Tailwind/Express/TS are unused deps despite package.json. Vite config has no plugins registered. Created this AGENTS.md.
+
+### 2026-10-24
+- Reset the local JSON workspace for testing after saving a timestamped backup in ignored data/. Empty Moodle/Classroom arrays now replace browser caches in pullWorkspaceFromServer, so cleared courses stay cleared. Verified the workspace API, persisted JSON, empty iCal feed, and npm run lint.
