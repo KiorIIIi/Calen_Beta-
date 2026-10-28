@@ -4,7 +4,7 @@ Notes and working context for AI agents (and humans) operating on this repositor
 
 ## What this project is
 
-**Calen** — a Notion-inspired academic planner. Vanilla-JS single-page web app that unifies deadlines from Moodle, Google Classroom, Google Calendar, Notion, and Trello into one task list and calendar. Offline-first via `localStorage`, with optional Firebase cloud sync (Auth + Firestore) and two-way Google Calendar sync. No custom server.
+**Calen** — a Notion-inspired academic planner. Vanilla-JS single-page web app that unifies deadlines from Moodle, Google Classroom, Google Calendar, Notion, and Trello into one task list and calendar. Offline-first via `localStorage`, with optional Firebase cloud sync (Auth + Firestore) and two-way Google Calendar sync. The Vite configuration now supplies a shared JSON workspace API, SSE updates, an iCalendar feed and upstream import proxies.
 
 ## Critical facts — read before editing
 
@@ -15,6 +15,14 @@ Notes and working context for AI agents (and humans) operating on this repositor
 - **Writes are optimistic and local-first.** Every mutation: update `state.tasks` in place → `saveLocalState()` (localStorage + BroadcastChannel) → `renderAll()` → Firestore write if signed in. There is no retry queue or conflict resolution.
 - **`npm install` may need `--legacy-peer-deps`** (esbuild/Vite peer conflict, noted in `UI-DESIGN.md`).
 - **Lint is only a syntax check** (`node --check`). There is no ESLint, Prettier, or type-check step.
+
+## Branch and setup
+
+- Work on `codex/development` for this task; keep development changes off `main`.
+- Read `README.md` and the actual source before relying on older `doc/` architecture descriptions.
+- Use Node 20.19+ or 22.12+ for Vite 8. The app uses Vite middleware in development and preview; a static `dist/` deployment does not include those routes.
+- Preserve `data/workspace-db.json` and existing browser data. Workspace saves replace the JSON snapshot; empty course lists are meaningful and must clear stale caches.
+- Keep Moodle tokens, calendar feed URLs and access tokens out of logs, committed examples and persisted workspace fields.
 
 ## Commands
 
@@ -40,7 +48,7 @@ After any edit: run `npm run lint` and, if touching deadline logic, `node --test
 | `firestore.rules` | Deployed auth + field validation; deny-by-default, per-user isolation |
 | `firebase-blueprint.json` | Entity schema reference (keep in sync with rules when schema changes) |
 | `firebase-applet-config.json` | Firebase web config (public by design) |
-| `vite.config.js` | `@` alias, `allowedHosts`, `DISABLE_HMR` switch; no plugins registered |
+| `vite.config.js` | Workspace JSON persistence, SSE, iCalendar feed, import proxies, `@` alias and `DISABLE_HMR` switch |
 | `doc/` | Full documentation — see below |
 
 ## Architecture in one paragraph
@@ -68,7 +76,9 @@ After any edit: run `npm run lint` and, if touching deadline logic, `node --test
 
 - One 2000-line `src/app.js` mixing state, rendering, and features.
 - `innerHTML` string rendering (escaping + listener reattachment burden).
-- No live Notion/Classroom/Trello clients — sources are filters + demo data only.
+- Notion and Trello remain source labels/demo data. Moodle and Classroom now have import proxies in `vite.config.js`; inspect their handlers and UI before changing integration behavior.
+- Vite workspace/proxy endpoints have no application authentication and share one JSON workspace. Do not describe them as per-user cloud storage.
+- Google popup sign-in is disabled by `GOOGLE_LOGIN_ENABLED = false`; access-token helpers remain in memory.
 - No token refresh, offline write queue, or conflict resolution.
 - `seedWorkspaceToFirestore` uses one batch (Firestore caps at 500 writes).
 - Moodle iCal parser is minimal (no folding, TZ, recurrence, `VALUE=DATE`).
