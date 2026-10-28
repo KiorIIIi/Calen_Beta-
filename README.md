@@ -1,6 +1,8 @@
 # Calen — Unified Academic Planner & Task Hub
 
-**Calen** is a minimalist, Notion-inspired academic task manager and calendar web application built with **HTML, CSS, Vanilla JavaScript, and Firebase Cloud Firestore**. It unifies student assignments, deadlines, and events across **Moodle LMS**, **Google Calendar**, **Google Classroom**, **Notion**, and **Trello** in a calm, distraction-free interface.
+**Calen** is an academic planner built with HTML, CSS, vanilla JavaScript and Vite. Students organize assignments, deadlines and events in one task list and calendar. The `codex/development` branch includes browser storage, a shared JSON workspace served by Vite, Moodle and Google Classroom import routes, and iCalendar import/export. Notion and Trello are source labels, not live integrations.
+
+Active development branch: **`codex/development`**. The instructions below describe this branch.
 
 ---
 
@@ -17,7 +19,7 @@
 - **Unified Settings & Integrations Hub**:
   - **Google Calendar Two-Way Sync**: Import upcoming events (next 30 days) from your primary Google Calendar and push pending Calen deadlines back to Google Calendar with explicit confirmation dialogs.
   - **Moodle LMS Sync**: Select enrolled Moodle courses to sync module deadlines, or paste/import Moodle iCal (`.ics`) calendar feeds.
-  - **Firebase Cloud Firestore Sync**: Sign in with Google to persist and sync tasks, course selections, and preferences across devices in real time.
+  - **Firebase Cloud Firestore Sync**: Firebase Auth and Firestore helpers support cloud persistence; popup Google sign-in is currently disabled on this branch (see runtime notes below).
   - **Offline-First & Instant Transfer Link**: Works immediately offline via `localStorage` and `BroadcastChannel`, with a shareable `#sync=` transfer link for quick device pairing without logging in.
   - **Appearance**: Switch between **Light Mode** (warm alabaster & soft pastels), **Dark Mode** (warm charcoal & muted pastels), and **System Auto**.
 
@@ -25,7 +27,7 @@
 
 ## Architecture & Project Structure
 
-Calen uses a lightweight, zero-framework **HTML + CSS + Vanilla JavaScript (ES Modules)** architecture bundled with **Vite**:
+Calen uses **HTML + CSS + Vanilla JavaScript (ES Modules)** with Vite middleware for the branch's local workspace and import APIs:
 
 ```text
 ├── index.html                   # Semantic HTML layout, views, and modal dialogs
@@ -36,7 +38,7 @@ Calen uses a lightweight, zero-framework **HTML + CSS + Vanilla JavaScript (ES M
 ├── firebase-applet-config.json  # Firebase project & OAuth client configuration
 ├── firestore.rules              # Cloud Firestore security rules (strict per-user isolation)
 ├── firebase-blueprint.json      # Firestore schema blueprint
-├── vite.config.js               # Vite dev server and build configuration
+├── vite.config.js               # Vite configuration, shared workspace API and import proxies
 └── package.json                 # Dependencies and scripts
 ```
 
@@ -44,7 +46,7 @@ Calen uses a lightweight, zero-framework **HTML + CSS + Vanilla JavaScript (ES M
 
 ## Prerequisites
 
-- **Node.js** `v18+` (or **Bun** `v1+`)
+- **Node.js** `20.19+` or `22.12+` (required by Vite 8)
 - **npm** (comes with Node.js)
 
 ---
@@ -54,8 +56,8 @@ Calen uses a lightweight, zero-framework **HTML + CSS + Vanilla JavaScript (ES M
 ### 1. Clone or Download the Project
 
 ```bash
-git clone <your-repo-url>
-cd calen
+git clone --branch codex/development https://github.com/KiorIIIi/Calen_Beta-.git
+cd Calen_Beta-
 ```
 
 ### 2. Install Dependencies
@@ -63,6 +65,8 @@ cd calen
 ```bash
 npm install
 ```
+
+If npm reports the documented Vite/esbuild peer dependency conflict, retry with `npm install --legacy-peer-deps`.
 
 ### 3. Start the Local Development Server
 
@@ -73,6 +77,15 @@ npm run dev
 Vite will start the development server on **http://localhost:3000**. Open that URL in your browser.
 
 ---
+
+## Branch runtime and integrations
+
+- Vite serves `/api/workspace`, `/api/events`, `/api/calendar.ics` and import proxies in both development and preview mode. Shared workspace data is written to `data/workspace-db.json`; preserve it when updating an existing installation.
+- Browser storage and cross-tab updates remain available. The server workspace is shared across clients of the same running instance; it is not an authenticated per-user database.
+- Google popup sign-in is currently disabled by `GOOGLE_LOGIN_ENABLED = false` in `src/firebase.js`. Firebase and Calendar helper code exists, but configuring Firebase alone does not enable the sign-in UI. The Calendar and Classroom dialogs also accept in-memory access tokens; these are not persisted across reloads.
+- Moodle supports REST-token imports and iCalendar feeds. Classroom supports access-token imports and iCalendar feeds. Actual access depends on the upstream account permissions and API configuration.
+- `npm run build` produces `dist/`. Static hosting alone does not provide the Vite API routes. For local build review, run `npm run preview`; this also loads the workspace middleware.
+- The workspace and proxy routes have no application authentication. Keep this development runtime on a trusted network. Publishing a tunnel exposes the shared workspace and import routes.
 
 ## Firebase & Google Calendar Setup (Optional for Custom Projects)
 
