@@ -1,40 +1,31 @@
+import { dayKey, groupByDeadline } from './deadlines.js';
 import {
+  GOOGLE_LOGIN_ENABLED,
   googleSignIn,
-  googleSignInBasic,
   getAccessToken,
+  setInMemoryAccessToken,
   logoutUser,
   subscribeAuth,
   subscribeUserWorkspace,
   saveTaskToFirestore,
   deleteTaskFromFirestore,
-  clearAllTasksFromFirestore,
   saveMoodleCoursesToFirestore,
   saveSettingsToFirestore,
+  seedWorkspaceToFirestore,
   fetchGoogleCalendarEvents,
   upsertGoogleCalendarEvent,
   deleteGoogleCalendarEvent
 } from './firebase.js';
 
 const STORAGE_KEYS = {
-  TASKS: 'calen_clean_tasks_v3',
-  COURSES: 'calen_clean_courses_v3',
-  SETTINGS: 'calen_clean_settings_v3'
+  TASKS: 'calen_html_tasks_v2',
+  COURSES: 'calen_html_moodle_courses_v2',
+  CLASSROOM_COURSES: 'calen_html_classroom_courses_v2',
+  SETTINGS: 'calen_html_settings_v2',
+  UPDATED_AT: 'calen_html_updated_at_v2'
 };
 
-// Legacy demo IDs to automatically purge if present in cloud from earlier sessions
-const LEGACY_DEMO_TASK_IDS = new Set([
-  'mdl-task-cs189-1',
-  'mdl-task-cs189-2',
-  'mdl-task-bio1a-1',
-  'mdl-task-econ-1',
-  'mdl-task-hist-1',
-  'task-gc-1',
-  'task-gc-2',
-  'task-tr-1',
-  'task-tr-2',
-  'task-nt-1',
-  'task-pr-1'
-]);
+const CLIENT_ID = `client-${Math.random().toString(36).slice(2, 10)}`;
 
 function offsetDateISO(daysOffset, hours = 23, minutes = 59) {
   const d = new Date();
@@ -43,30 +34,282 @@ function offsetDateISO(daysOffset, hours = 23, minutes = 59) {
   return d.toISOString();
 }
 
-// Application State (Starts 100% clean with zero premade tasks or courses)
+const DEFAULT_MOODLE_COURSES = [
+  {
+    id: 'moodle-cs189',
+    code: 'CS 189',
+    name: 'Introduction to Machine Learning',
+    instructor: 'Prof. J. Shewchuk',
+    term: 'Fall Semester',
+    synced: true,
+    assignments: [
+      {
+        id: 'mdl-task-cs189-1',
+        title: 'Problem Set 4: Neural Networks Backpropagation Derivation',
+        priority: 'urgent',
+        status: 'in_progress',
+        source: 'moodle',
+        course: 'CS 189',
+        dueDate: offsetDateISO(1, 15, 59),
+        description: 'Submit PDF writeup + Jupyter notebook via Moodle Assignment dropbox.',
+        subtasks: [
+          { id: 's1', title: 'Derive matrix gradients for layer L', completed: true },
+          { id: 's2', title: 'Implement vectorized ReLU backward pass', completed: true },
+          { id: 's3', title: 'Run CIFAR-10 validation accuracy benchmark', completed: false },
+          { id: 's4', title: 'Export LaTeX PDF and upload to Moodle', completed: false }
+        ]
+      },
+      {
+        id: 'mdl-task-cs189-2',
+        title: 'Quiz 6: Support Vector Machines & Kernel Trick',
+        priority: 'medium',
+        status: 'todo',
+        source: 'moodle',
+        course: 'CS 189',
+        dueDate: offsetDateISO(5, 17, 0),
+        description: 'Timed 45-minute quiz on Moodle Quiz module.',
+        subtasks: [
+          { id: 's5', title: 'Review dual formulation lecture notes', completed: false },
+          { id: 's6', title: 'Complete practice quiz on Moodle', completed: false }
+        ]
+      }
+    ]
+  },
+  {
+    id: 'moodle-bio1a',
+    code: 'BIO 1A',
+    name: 'General Biology & Molecular Lab',
+    instructor: 'Dr. M. Doudna',
+    term: 'Fall Semester',
+    synced: true,
+    assignments: [
+      {
+        id: 'mdl-task-bio1a-1',
+        title: 'Lab Report 2: PCR Amplification & Gel Electrophoresis',
+        priority: 'high',
+        status: 'todo',
+        source: 'moodle',
+        course: 'BIO 1A',
+        dueDate: offsetDateISO(3, 10, 0),
+        description: 'Include annotated gel image, standard curve plot, and error analysis.',
+        subtasks: [
+          { id: 'b1', title: 'Label base-pair ladder lanes on gel photo', completed: true },
+          { id: 'b2', title: 'Write discussion of non-specific bands', completed: false },
+          { id: 'b3', title: 'Submit Turnitin check on Moodle', completed: false }
+        ]
+      }
+    ]
+  },
+  {
+    id: 'moodle-econ100b',
+    code: 'ECON 100B',
+    name: 'Macroeconomic Analysis & Policy',
+    instructor: 'Prof. R. Olney',
+    term: 'Fall Semester',
+    synced: true,
+    assignments: [
+      {
+        id: 'mdl-task-econ-1',
+        title: 'Empirical Project: Federal Reserve Monetary Policy Data',
+        priority: 'medium',
+        status: 'in_progress',
+        source: 'moodle',
+        course: 'ECON 100B',
+        dueDate: offsetDateISO(6, 23, 59),
+        description: 'Download FRED CPI series and plot IS-LM response curves.',
+        subtasks: [
+          { id: 'e1', title: 'Pull quarterly FRED inflation dataset', completed: true },
+          { id: 'e2', title: 'Draft 2-page policy memo', completed: false }
+        ]
+      }
+    ]
+  },
+  {
+    id: 'moodle-hist120',
+    code: 'HIST 120',
+    name: 'Seminar in Modern European History',
+    instructor: 'Prof. C. Hesse',
+    term: 'Fall Semester',
+    synced: false,
+    assignments: [
+      {
+        id: 'mdl-task-hist-1',
+        title: 'Primary Source Response: 1848 Pamphlets Archive',
+        priority: 'low',
+        status: 'todo',
+        source: 'moodle',
+        course: 'HIST 120',
+        dueDate: offsetDateISO(8, 18, 0),
+        description: '600-word reflection uploaded to Moodle forum.',
+        subtasks: []
+      }
+    ]
+  }
+];
+
+const DEFAULT_CLASSROOM_COURSES = [
+  {
+    id: 'classroom-aplit',
+    code: 'AP-LIT',
+    name: 'AP English Literature & Composition',
+    instructor: 'Ms. K. Morrison',
+    synced: true,
+    assignments: [
+      {
+        id: 'task-gc-1',
+        title: 'Essay Draft: Analysis of "The Great Gatsby" Character Arc',
+        priority: 'urgent',
+        status: 'in_progress',
+        source: 'google_classroom',
+        course: 'AP-LIT',
+        dueDate: offsetDateISO(0, 15, 59),
+        description: 'Google Docs attachment required via Google Classroom.',
+        subtasks: [
+          { id: 'gc1', title: 'Outline thesis & 3 textual citations', completed: true },
+          { id: 'gc2', title: 'Draft body paragraphs', completed: true },
+          { id: 'gc3', title: 'Peer review edits', completed: false },
+          { id: 'gc4', title: 'Turn in on Google Classroom', completed: false }
+        ]
+      }
+    ]
+  },
+  {
+    id: 'classroom-apush',
+    code: 'AP-USH',
+    name: 'AP United States History',
+    instructor: 'Mr. D. Lin',
+    synced: true,
+    assignments: [
+      {
+        id: 'task-gc-2',
+        title: 'DBQ Practice: Progressive Era Reform Movements',
+        priority: 'high',
+        status: 'todo',
+        source: 'google_classroom',
+        course: 'AP-USH',
+        dueDate: offsetDateISO(2, 9, 0),
+        description: 'Analyze 7 primary source documents and write full essay response.',
+        subtasks: [
+          { id: 'u1', title: 'Group documents into 3 buckets', completed: true },
+          { id: 'u2', title: 'Write contextualization & thesis', completed: false },
+          { id: 'u3', title: 'Complete HIPP sourcing for 4 docs', completed: false }
+        ]
+      }
+    ]
+  },
+  {
+    id: 'classroom-phys',
+    code: 'PHYS 7A',
+    name: 'Physics for Scientists and Engineers',
+    instructor: 'Prof. A. Lanzara',
+    synced: false,
+    assignments: [
+      {
+        id: 'task-gc-3',
+        title: 'Kinematics & Rotational Dynamics Problem Set',
+        priority: 'medium',
+        status: 'todo',
+        source: 'google_classroom',
+        course: 'PHYS 7A',
+        dueDate: offsetDateISO(4, 17, 0),
+        description: 'Upload worked solutions PDF to Google Classroom.',
+        subtasks: []
+      }
+    ]
+  }
+];
+
+function getInitialTasks() {
+  const baseTasks = [
+    {
+      id: 'task-tr-1',
+      title: 'Submit Capstone Budget Approval Form to Department',
+      priority: 'urgent',
+      status: 'todo',
+      source: 'trello',
+      course: 'Senior Capstone Sprint',
+      dueDate: offsetDateISO(-1, 9, 0),
+      description: 'Sign PDF and attach to Trello Sprint card.',
+      subtasks: []
+    },
+    {
+      id: 'task-nt-1',
+      title: 'Synthesize Midterm Organic Chemistry Reaction Mechanisms',
+      priority: 'medium',
+      status: 'in_progress',
+      source: 'notion',
+      course: 'CHEM 3A Wiki',
+      dueDate: offsetDateISO(4, 20, 0),
+      description: 'Organize SN1, SN2, E1, E2 stereochemistry summary table in Notion.',
+      subtasks: [
+        { id: 'n1', title: 'Create reaction conditions comparison matrix', completed: true },
+        { id: 'n2', title: 'Add practice flashcards', completed: false }
+      ]
+    },
+    {
+      id: 'task-pr-1',
+      title: 'Submit FAFSA & Cal Grant Renewal Application',
+      priority: 'high',
+      status: 'completed',
+      source: 'personal',
+      course: 'Personal',
+      dueDate: offsetDateISO(-2, 16, 0),
+      description: 'Annual student financial aid deadline.',
+      subtasks: []
+    },
+    {
+      id: 'task-tr-2',
+      title: 'Capstone: Finish Hardware Architecture Block Diagram',
+      priority: 'low',
+      status: 'in_progress',
+      source: 'trello',
+      course: 'Senior Capstone Sprint',
+      dueDate: offsetDateISO(7, 14, 0),
+      description: 'Export SVG diagram and attach to Trello card.',
+      subtasks: []
+    }
+  ];
+
+  const syncedMoodleTasks = DEFAULT_MOODLE_COURSES.filter((c) => c.synced).flatMap(
+    (c) => c.assignments
+  );
+  const syncedClassroomTasks = DEFAULT_CLASSROOM_COURSES.filter((c) => c.synced).flatMap(
+    (c) => c.assignments
+  );
+
+  return [...syncedMoodleTasks, ...syncedClassroomTasks, ...baseTasks];
+}
+
+// Application State
 const state = {
   activeView: 'tasks',
-  subView: 'table',
+  subView: 'deadline',
   calMode: 'month',
   calCursor: new Date(),
   priorityFilter: 'all',
   sourceFilter: 'all',
+  courseFilter: 'all',
   statusFilter: 'all',
   searchQuery: '',
-  sortBy: 'priority',
+  sortBy: 'dueDate',
   reminderDismissed: false,
   editingTaskId: null,
   draftSubtasks: [],
   user: null,
   hasGcalToken: false,
-  showLoginScreen: true,
-  justSignedInSetup: false,
+  serverOnline: false,
+  updatedAt: 0,
   unsubFirestore: null,
   pendingConfirmCallback: null,
   tasks: [],
   moodleCourses: [],
+  classroomCourses: [],
   settings: {
     theme: 'dark',
+    moodleUrl: 'https://moodle.university.edu',
+    moodleIcalUrl: '',
+    gcalIcalUrl: '',
+    classroomIcalUrl: '',
     platforms: {
       moodle: true,
       google_calendar: true,
@@ -82,26 +325,31 @@ const broadcast =
 
 function loadLocalState() {
   try {
-    // Clean up any old v1/v2 demo storage keys
-    localStorage.removeItem('calen_html_tasks_v2');
-    localStorage.removeItem('calen_html_moodle_courses_v2');
-
     if (window.location.hash.startsWith('#sync=')) {
       const encoded = window.location.hash.replace('#sync=', '');
       const decoded = JSON.parse(decodeURIComponent(escape(atob(encoded))));
       if (Array.isArray(decoded.tasks)) {
         localStorage.setItem(STORAGE_KEYS.TASKS, JSON.stringify(decoded.tasks));
+        localStorage.setItem(STORAGE_KEYS.UPDATED_AT, String(Date.now()));
       }
       window.history.replaceState(null, '', window.location.pathname);
     }
 
+    const rawUpdatedAt = localStorage.getItem(STORAGE_KEYS.UPDATED_AT);
+    state.updatedAt = rawUpdatedAt ? Number(rawUpdatedAt) || 0 : 0;
+
     const rawCourses = localStorage.getItem(STORAGE_KEYS.COURSES);
-    state.moodleCourses = rawCourses ? JSON.parse(rawCourses) : [];
+    state.moodleCourses = rawCourses
+      ? JSON.parse(rawCourses)
+      : structuredClone(DEFAULT_MOODLE_COURSES);
+
+    const rawClassroom = localStorage.getItem(STORAGE_KEYS.CLASSROOM_COURSES);
+    state.classroomCourses = rawClassroom
+      ? JSON.parse(rawClassroom)
+      : structuredClone(DEFAULT_CLASSROOM_COURSES);
 
     const rawTasks = localStorage.getItem(STORAGE_KEYS.TASKS);
-    state.tasks = rawTasks
-      ? JSON.parse(rawTasks).filter((t) => !LEGACY_DEMO_TASK_IDS.has(t.id))
-      : [];
+    state.tasks = rawTasks ? JSON.parse(rawTasks) : getInitialTasks();
 
     const rawSettings = localStorage.getItem(STORAGE_KEYS.SETTINGS);
     if (rawSettings) {
@@ -113,23 +361,139 @@ function loadLocalState() {
       };
     }
   } catch (e) {
-    console.warn('Initializing clean workspace state:', e);
-    state.moodleCourses = [];
-    state.tasks = [];
+    console.warn('Fallback to default state:', e);
+    state.moodleCourses = structuredClone(DEFAULT_MOODLE_COURSES);
+    state.classroomCourses = structuredClone(DEFAULT_CLASSROOM_COURSES);
+    state.tasks = getInitialTasks();
   }
 }
 
-function saveLocalState(broadcastUpdate = true) {
+async function pushWorkspaceToServer() {
+  try {
+    const res = await fetch('/api/workspace', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        clientId: CLIENT_ID,
+        updatedAt: state.updatedAt,
+        tasks: state.tasks,
+        moodleCourses: state.moodleCourses,
+        classroomCourses: state.classroomCourses,
+        settings: state.settings
+      })
+    });
+    if (res.ok) {
+      state.serverOnline = true;
+      renderWorkspaceShell();
+    }
+  } catch {
+    state.serverOnline = false;
+    renderWorkspaceShell();
+  }
+}
+
+async function pullWorkspaceFromServer() {
+  try {
+    const res = await fetch('/api/workspace', { cache: 'no-store' });
+    if (!res.ok) return;
+    const data = await res.json();
+    state.serverOnline = true;
+    const ws = data?.workspace;
+    if (ws && Array.isArray(ws.tasks)) {
+      if (!state.updatedAt || (ws.updatedAt && ws.updatedAt >= state.updatedAt)) {
+        state.tasks = ws.tasks;
+        if (Array.isArray(ws.moodleCourses)) {
+          state.moodleCourses = ws.moodleCourses;
+        }
+        if (Array.isArray(ws.classroomCourses)) {
+          state.classroomCourses = ws.classroomCourses;
+        }
+        if (ws.settings) {
+          state.settings = {
+            ...state.settings,
+            ...ws.settings,
+            platforms: { ...state.settings.platforms, ...(ws.settings.platforms || {}) }
+          };
+        }
+        state.updatedAt = ws.updatedAt || Date.now();
+        saveLocalState(false, false);
+        renderAll();
+      } else if (state.updatedAt > (ws.updatedAt || 0)) {
+        // Client has newer offline edits made while away — push them up to server!
+        await pushWorkspaceToServer();
+      }
+    } else {
+      // Server database is empty — seed it from current client state
+      if (!state.updatedAt) state.updatedAt = Date.now();
+      await pushWorkspaceToServer();
+    }
+  } catch {
+    state.serverOnline = false;
+    renderWorkspaceShell();
+  }
+}
+
+function initServerSync() {
+  pullWorkspaceFromServer();
+
+  // Real-time Server-Sent Events stream across localhost and https tunnel
+  if (typeof EventSource !== 'undefined') {
+    let es = null;
+    const connectSse = () => {
+      try {
+        es = new EventSource('/api/events');
+        es.onopen = () => {
+          state.serverOnline = true;
+          renderWorkspaceShell();
+        };
+        es.onmessage = (event) => {
+          try {
+            const msg = JSON.parse(event.data);
+            if (msg.type === 'workspace_updated' && msg.clientId !== CLIENT_ID) {
+              pullWorkspaceFromServer();
+            }
+          } catch {
+            // ignore malformed frame
+          }
+        };
+        es.onerror = () => {
+          state.serverOnline = false;
+          renderWorkspaceShell();
+        };
+      } catch {
+        // Offline mode fallback
+      }
+    };
+    connectSse();
+  }
+
+  window.addEventListener('online', () => {
+    pullWorkspaceFromServer();
+  });
+}
+
+function saveLocalState(broadcastUpdate = true, syncToServer = true) {
+  if (syncToServer) {
+    state.updatedAt = Date.now();
+  }
   localStorage.setItem(STORAGE_KEYS.TASKS, JSON.stringify(state.tasks));
   localStorage.setItem(STORAGE_KEYS.COURSES, JSON.stringify(state.moodleCourses));
+  localStorage.setItem(STORAGE_KEYS.CLASSROOM_COURSES, JSON.stringify(state.classroomCourses));
   localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(state.settings));
+  localStorage.setItem(STORAGE_KEYS.UPDATED_AT, String(state.updatedAt));
 
   if (broadcastUpdate && broadcast) {
     broadcast.postMessage({
       tasks: state.tasks,
       moodleCourses: state.moodleCourses,
-      settings: state.settings
+      classroomCourses: state.classroomCourses,
+      settings: state.settings,
+      updatedAt: state.updatedAt
     });
+  }
+
+  if (syncToServer) {
+    pushWorkspaceToServer();
   }
 }
 
@@ -185,6 +549,7 @@ function escapeHtml(str) {
 }
 
 function formatDueDate(isoString) {
+  if (!isoString) return { text: 'No deadline', isOverdue: false };
   const date = new Date(isoString);
   if (Number.isNaN(date.getTime())) return { text: 'No date', isOverdue: false };
 
@@ -216,6 +581,7 @@ function getVisibleTasks() {
     if (state.sourceFilter !== 'all' && task.source !== state.sourceFilter) {
       return false;
     }
+    if (state.courseFilter !== 'all' && task.course !== state.courseFilter) return false;
     if (state.statusFilter === 'pending' && task.status === 'completed') {
       return false;
     }
@@ -223,15 +589,7 @@ function getVisibleTasks() {
       return false;
     }
     if (state.statusFilter === 'today') {
-      const d = new Date(task.dueDate);
-      const now = new Date();
-      if (
-        d.getFullYear() !== now.getFullYear() ||
-        d.getMonth() !== now.getMonth() ||
-        d.getDate() !== now.getDate()
-      ) {
-        return false;
-      }
+      if (dayKey(task.dueDate) !== dayKey(new Date())) return false;
     }
     if (state.searchQuery.trim()) {
       const q = state.searchQuery.toLowerCase();
@@ -261,11 +619,114 @@ function sortTasks(list) {
 }
 
 // ============================================================================
+//UNIVERSAL ICAL (.ICS) PARSER (RFC 5545 + LINE UNFOLDING + VALUE=DATE)
+// ============================================================================
+function parseIcsEvents(rawIcs, defaultSource = 'moodle', defaultCourse = 'iCal Sync') {
+  if (!rawIcs || typeof rawIcs !== 'string') return [];
+  // Unfold RFC 5545 folded lines
+  const unfolded = rawIcs.replace(/\r?\n[ \t]/g, '');
+  const blocks = unfolded.split('BEGIN:VEVENT').slice(1);
+  const events = [];
+
+  blocks.forEach((rawBlock, i) => {
+    const block = rawBlock.split('END:VEVENT')[0] || rawBlock;
+    const getField = (name) => {
+      const regex = new RegExp(`^${name}(?:;[^:]*)?:(.*)$`, 'im');
+      const m = block.match(regex);
+      return m ? m[1].trim() : '';
+    };
+
+    const rawSummary = getField('SUMMARY')
+      .replace(/\\,/g, ',')
+      .replace(/\\;/g, ';')
+      .replace(/\\n/gi, ' ')
+      .replace(/^\[Calen\]\s*/i, '');
+    const rawDesc = getField('DESCRIPTION')
+      .replace(/\\,/g, ',')
+      .replace(/\\;/g, ';')
+      .replace(/\\n/gi, '\n');
+    const rawCategories = getField('CATEGORIES').replace(/\\,/g, ',');
+    const rawUid = getField('UID') || `${Date.now()}-${i}`;
+    const dtStr = getField('DTEND') || getField('DTSTART') || getField('DUE');
+
+    let dueDate = offsetDateISO(2, 23, 59);
+    if (dtStr) {
+      const cleanDt = dtStr.trim();
+      if (/^\d{8}T\d{6}Z?$/i.test(cleanDt)) {
+        const y = cleanDt.slice(0, 4);
+        const mo = cleanDt.slice(4, 6);
+        const da = cleanDt.slice(6, 8);
+        const hr = cleanDt.slice(9, 11);
+        const mi = cleanDt.slice(11, 13);
+        const sc = cleanDt.slice(13, 15);
+        const suffix = cleanDt.endsWith('Z') ? 'Z' : '';
+        const parsed = new Date(`${y}-${mo}-${da}T${hr}:${mi}:${sc}${suffix}`);
+        if (!Number.isNaN(parsed.getTime())) dueDate = parsed.toISOString();
+      } else if (/^\d{8}$/.test(cleanDt)) {
+        // VALUE=DATE (all-day deadline) -> set to 23:59 on that date
+        const y = cleanDt.slice(0, 4);
+        const mo = cleanDt.slice(4, 6);
+        const da = cleanDt.slice(6, 8);
+        const parsed = new Date(`${y}-${mo}-${da}T23:59:00`);
+        if (!Number.isNaN(parsed.getTime())) dueDate = parsed.toISOString();
+      }
+    }
+
+    const safeUid = rawUid.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 40) || `${Date.now()}-${i}`;
+    const prefix =
+      defaultSource === 'google_calendar'
+        ? 'gcal'
+        : defaultSource === 'google_classroom'
+        ? 'gc-ical'
+        : 'mdl-ical';
+
+    events.push({
+      id: `${prefix}-${safeUid}`,
+      title: rawSummary || `${defaultCourse} Event #${i + 1}`,
+      priority: defaultSource === 'google_calendar' ? 'medium' : 'high',
+      status: 'todo',
+      source: defaultSource,
+      course: rawCategories || defaultCourse,
+      dueDate,
+      description: rawDesc || `Imported via ${defaultCourse} (.ics) feed`,
+      ...(defaultSource === 'google_calendar' ? { gcalEventId: safeUid } : {}),
+      subtasks: []
+    });
+  });
+
+  return events;
+}
+
+function mergeImportedTasks(importedTasks) {
+  let added = 0;
+  let updated = 0;
+  for (const item of importedTasks) {
+    const existing = state.tasks.find(
+      (t) =>
+        t.id === item.id ||
+        (item.gcalEventId && t.gcalEventId === item.gcalEventId) ||
+        (t.source === item.source && t.title === item.title && dayKey(t.dueDate) === dayKey(item.dueDate))
+    );
+    if (existing) {
+      existing.title = item.title;
+      existing.dueDate = item.dueDate;
+      if (item.description) existing.description = item.description;
+      if (item.course) existing.course = item.course;
+      updated++;
+    } else {
+      state.tasks.unshift(item);
+      added++;
+    }
+  }
+  return { added, updated };
+}
+
+// ============================================================================
 // RENDERING
 // ============================================================================
 function renderAll() {
   applyTheme();
-  renderAuthScreen();
+  renderWorkspaceShell();
   renderSettingsSyncStatus();
   renderReminderBanner();
   renderPriorityFocusBar();
@@ -274,49 +735,17 @@ function renderAll() {
   renderGcalModalContent();
 }
 
-function renderAuthScreen() {
-  const loginScreen = document.getElementById('login-screen');
-  const appHeader = document.getElementById('app-header');
-  const appWorkspace = document.getElementById('app-workspace');
-  const stepAuth = document.getElementById('login-step-auth');
-  const stepSetup = document.getElementById('login-step-setup');
-  const connectedEmailEl = document.getElementById('login-connected-email');
-  const hdrSettingsLabel = document.getElementById('hdr-settings-label');
-
-  if (hdrSettingsLabel) {
-    hdrSettingsLabel.textContent = state.user ? 'Settings' : 'Settings · Sign In';
-  }
-
-  if (!loginScreen || !appHeader || !appWorkspace) return;
-
-  if (state.showLoginScreen) {
-    loginScreen.classList.remove('hidden');
-    appHeader.classList.add('hidden');
-    appWorkspace.classList.add('hidden');
-
-    if (state.user && state.justSignedInSetup) {
-      stepAuth?.classList.add('hidden');
-      stepSetup?.classList.remove('hidden');
-      if (connectedEmailEl) {
-        connectedEmailEl.textContent = `Signed in as ${state.user.email} — cloud sync & Google Calendar ready.`;
-      }
-    } else {
-      stepAuth?.classList.remove('hidden');
-      stepSetup?.classList.add('hidden');
-    }
-  } else {
-    loginScreen.classList.add('hidden');
-    appHeader.classList.remove('hidden');
-    appWorkspace.classList.remove('hidden');
-  }
-}
-
 function renderSettingsSyncStatus() {
   const syncedCount = state.moodleCourses.filter((c) => c.synced).length;
   const moodleBtnLabel = document.getElementById('moodle-btn-label');
   if (moodleBtnLabel) {
-    moodleBtnLabel.textContent =
-      syncedCount > 0 ? `Manage Courses (${syncedCount})` : 'Manage Courses';
+    moodleBtnLabel.textContent = `Manage Courses (${syncedCount})`;
+  }
+
+  const classroomSyncedCount = state.classroomCourses.filter((c) => c.synced).length;
+  const classroomBtnLabel = document.getElementById('classroom-btn-label');
+  if (classroomBtnLabel) {
+    classroomBtnLabel.textContent = `Manage Classes (${classroomSyncedCount})`;
   }
 
   const gcalSyncedCount = state.tasks.filter(
@@ -330,7 +759,19 @@ function renderSettingsSyncStatus() {
 
   const modalCloudText = document.getElementById('modal-cloud-login-text');
   const syncSub = document.getElementById('sync-cloud-subtitle');
-  if (state.user) {
+  const cloudBtn = document.getElementById('btn-modal-cloud-login');
+  if (!GOOGLE_LOGIN_ENABLED) {
+    if (cloudBtn) {
+      cloudBtn.disabled = true;
+      cloudBtn.setAttribute('aria-disabled', 'true');
+    }
+    if (modalCloudText) modalCloudText.textContent = 'Google Login (Unavailable)';
+    if (syncSub) {
+      syncSub.textContent = state.serverOnline
+        ? 'Connected to Local Server DB — localhost, HTTPS tunnel, and offline cache are synced seamlessly.'
+        : 'Offline Cache Active — viewing saved calendar data on this device. Will sync when server is reachable.';
+    }
+  } else if (state.user) {
     if (modalCloudText) modalCloudText.textContent = 'Sign out of Google';
     if (syncSub)
       syncSub.textContent = `Signed in as ${state.user.email} — live Firestore sync active`;
@@ -427,32 +868,11 @@ function renderPriorityFocusBar() {
   });
 }
 
-function buildEmptyWorkspaceHtml() {
-  return `
-    <div style="padding:56px 24px;text-align:center;border-bottom:1px solid var(--border-color);display:flex;flex-direction:column;align-items:center;gap:12px;">
-      <h2 style="font-size:20px;color:var(--text-main);">Your workspace is clean and ready</h2>
-      <p style="font-size:14px;color:var(--text-secondary);max-width:480px;">
-        Add your first assignment using the quick-add bar above, or connect your Google Calendar and Moodle account in Settings to sync your real schedule.
-      </p>
-      <div style="display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-top:8px;">
-        <button type="button" data-empty-action="new-task" class="btn-primary">+ Create First Task</button>
-        <button type="button" data-empty-action="open-gcal" class="hdr-btn pastel-sky">Sync Google Calendar</button>
-        <button type="button" data-empty-action="open-moodle" class="hdr-btn pastel-peach">Connect Moodle</button>
-        <button type="button" data-empty-action="open-settings" class="hdr-btn">Settings &amp; Sign In</button>
-      </div>
-    </div>
-  `;
-}
-
 function buildTableHtml(tasks) {
-  if (state.tasks.length === 0) {
-    return buildEmptyWorkspaceHtml();
-  }
-
   if (tasks.length === 0) {
     return `
       <div style="padding:40px 16px;text-align:center;color:var(--text-secondary);border-bottom:1px solid var(--border-color);">
-        No assignments match the active filter. Try clearing your filter above.
+        No assignments match the current filter. Try clearing filters or adding a new task above.
       </div>
     `;
   }
@@ -545,11 +965,73 @@ function buildTableHtml(tasks) {
   `;
 }
 
+function selectView(view) {
+  state.activeView = view;
+  document.querySelectorAll('[data-view]').forEach((button) => {
+    const active = button.dataset.view === view;
+    button.classList.toggle('active', active);
+    if (active) button.setAttribute('aria-current', 'page');
+    else button.removeAttribute('aria-current');
+  });
+  document.getElementById('view-tasks').classList.toggle('hidden', view !== 'tasks');
+  document.getElementById('view-calendar').classList.toggle('hidden', view !== 'calendar');
+  document.getElementById('current-view-label').textContent = view === 'tasks' ? 'Tasks' : 'Calendar';
+  if (view === 'calendar') renderCalendarSection();
+}
+
+function renderWorkspaceShell() {
+  const date = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', weekday: 'long', month: 'long', day: 'numeric' }).format(new Date());
+  document.getElementById('tasks-subtitle').textContent = `${date} · Your deadlines, in one place`;
+  document.getElementById('workspace-account').textContent = state.user?.displayName || state.user?.email || 'Personal calendar';
+  document.getElementById('workspace-account-status').textContent = state.serverOnline
+    ? 'Live Server + Offline Sync'
+    : 'Offline Device Cache';
+  document.querySelectorAll('[data-source]').forEach((button) => {
+    button.classList.toggle('active', button.dataset.source === state.sourceFilter);
+    button.setAttribute('aria-pressed', String(button.dataset.source === state.sourceFilter));
+  });
+  const courses = [...new Set(state.tasks.map(task => task.course).filter(Boolean))].sort();
+  if (state.courseFilter !== 'all' && !courses.includes(state.courseFilter)) state.courseFilter = 'all';
+  const courseSelect = document.getElementById('filter-course');
+  courseSelect.innerHTML = '<option value="all">All courses</option>' + courses.map(course => `<option value="${escapeHtml(course)}">${escapeHtml(course)}</option>`).join('');
+  courseSelect.value = state.courseFilter;
+}
+
+function buildDeadlineHtml(tasks) {
+  if (!tasks.length) {
+    const empty = state.tasks.length === 0;
+    return `<div class="deadline-empty"><h2>${empty ? 'A little clarity starts here.' : 'No tasks match these filters.'}</h2><p>${empty ? 'Add your first task to keep your next deadline in sight.' : 'Try another search or clear your filters to see all tasks.'}</p><button type="button" class="btn-primary" ${empty ? 'data-add-first' : 'data-clear-filters'}>${empty ? 'Add task' : 'Clear filters'}</button></div>`;
+  }
+  return Object.entries(groupByDeadline(tasks)).filter(([, list]) => list.length).map(([label, list]) => {
+    const rows = list.map(task => {
+      const done = task.status === 'completed';
+      const due = task.dueDate && dayKey(task.dueDate) ? new Date(task.dueDate) : null;
+      const today = due && dayKey(due) === dayKey(new Date());
+      const dueLabel = due ? `${today ? 'Today' : due.toLocaleDateString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric' })}, ${due.toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: 'numeric', minute: '2-digit' })}` : 'No deadline';
+      const source = SOURCE_META[task.source] || SOURCE_META.personal;
+      return `<div class="deadline-row ${done ? 'is-complete' : ''}">
+        <label class="deadline-check"><input type="checkbox" data-action="toggle-check" data-id="${escapeHtml(task.id)}" ${done ? 'checked' : ''} aria-label="${done ? 'Mark incomplete' : 'Complete'}: ${escapeHtml(task.title)}" /></label>
+        <button type="button" class="deadline-task" data-row-id="${escapeHtml(task.id)}">
+          <span class="deadline-title">${escapeHtml(task.title)}</span>
+          <span class="deadline-course">${escapeHtml(task.course || 'Personal task')}</span>
+          <span class="deadline-due ${label === 'Overdue' ? 'is-overdue' : ''}">${escapeHtml(dueLabel)}</span>
+          <span class="deadline-source">${escapeHtml(source.label)}</span>
+        </button>
+      </div>`;
+    }).join('');
+    const heading = `<span>${label}</span><span class="deadline-count">${list.length}</span>`;
+    return label === 'Completed'
+      ? `<details class="deadline-completed"><summary>${heading}</summary>${rows}</details>`
+      : `<section class="deadline-group" aria-label="${label}"><h2 class="deadline-group-title ${label === 'Overdue' ? 'is-overdue' : ''}">${heading}</h2>${rows}</section>`;
+  }).join('');
+}
+
 function renderTasksSection() {
   const container = document.getElementById('tasks-container');
   const totalChip = document.getElementById('task-total-chip');
   if (!container) return;
 
+  const completedOpen = container.querySelector('.deadline-completed')?.open || false;
   const filtered = sortTasks(getVisibleTasks());
   if (totalChip) {
     totalChip.textContent = `${filtered.length} ${
@@ -557,7 +1039,9 @@ function renderTasksSection() {
     }`;
   }
 
-  if (state.subView === 'table') {
+  if (state.subView === 'deadline') {
+    container.innerHTML = buildDeadlineHtml(filtered);
+  } else if (state.subView === 'table') {
     container.innerHTML = buildTableHtml(filtered);
   } else if (state.subView === 'priority') {
     const levels = ['urgent', 'high', 'medium', 'low'];
@@ -637,31 +1121,25 @@ function renderTasksSection() {
                   <h3 class="group-title">${col.label}</h3>
                   <span class="count-meta">${colTasks.length}</span>
                 </div>
-                ${
-                  colTasks.length > 0
-                    ? colTasks
-                        .map((task) => {
-                          const prio = PRIORITY_META[task.priority] || PRIORITY_META.medium;
-                          const src = SOURCE_META[task.source] || SOURCE_META.personal;
-                          const due = formatDueDate(task.dueDate);
-                          return `
-                            <div class="kanban-card" data-row-id="${escapeHtml(task.id)}">
-                              <div class="kanban-card-top">
-                                <span class="badge ${prio.badgeClass}">${prio.label}</span>
-                                <span class="count-meta">${escapeHtml(
-                                  task.course || src.label
-                                )}</span>
-                              </div>
-                              <div class="kanban-card-title">${escapeHtml(task.title)}</div>
-                              <div class="kanban-card-foot">
-                                <span class="mono">${escapeHtml(due.text)}</span>
-                              </div>
-                            </div>
-                          `;
-                        })
-                        .join('')
-                    : `<div style="padding:16px 0;font-size:13px;color:var(--text-muted);">No tasks</div>`
-                }
+                ${colTasks
+                  .map((task) => {
+                    const prio = PRIORITY_META[task.priority] || PRIORITY_META.medium;
+                    const src = SOURCE_META[task.source] || SOURCE_META.personal;
+                    const due = formatDueDate(task.dueDate);
+                    return `
+                      <div class="kanban-card" data-row-id="${escapeHtml(task.id)}">
+                        <div class="kanban-card-top">
+                          <span class="badge ${prio.badgeClass}">${prio.label}</span>
+                          <span class="count-meta">${escapeHtml(task.course || src.label)}</span>
+                        </div>
+                        <div class="kanban-card-title">${escapeHtml(task.title)}</div>
+                        <div class="kanban-card-foot">
+                          <span class="mono">${escapeHtml(due.text)}</span>
+                        </div>
+                      </div>
+                    `;
+                  })
+                  .join('')}
               </div>
             `;
           })
@@ -670,20 +1148,21 @@ function renderTasksSection() {
     `;
   }
 
+  const completed = container.querySelector('.deadline-completed');
+  if (completed) completed.open = completedOpen;
   attachTaskTableListeners(container);
+  container.querySelector('[data-clear-filters]')?.addEventListener('click', () => {
+    state.priorityFilter = state.sourceFilter = state.courseFilter = state.statusFilter = 'all';
+    state.searchQuery = '';
+    document.getElementById('search-input').value = '';
+    document.getElementById('filter-source').value = 'all';
+    document.getElementById('filter-status').value = 'all';
+    renderAll();
+  });
+  container.querySelector('[data-add-first]')?.addEventListener('click', openNewTaskModal);
 }
 
 function attachTaskTableListeners(container) {
-  container.querySelectorAll('[data-empty-action]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const action = btn.getAttribute('data-empty-action');
-      if (action === 'new-task') openNewTaskModal();
-      if (action === 'open-gcal') openGcalModal();
-      if (action === 'open-moodle') openMoodleModal();
-      if (action === 'open-settings') openSettingsModal();
-    });
-  });
-
   container.querySelectorAll('[data-action="toggle-check"]').forEach((cell) => {
     cell.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -824,7 +1303,7 @@ function renderCalendarSection() {
 }
 
 // ============================================================================
-// TASK MUTATIONS + FIREBASE PERSISTENCE
+// TASK MUTATIONS + SERVER/LOCAL/FIREBSAE PERSISTENCE
 // ============================================================================
 async function persistTask(task) {
   saveLocalState();
@@ -895,8 +1374,8 @@ function closeGcalConfirmation() {
 // ============================================================================
 // GOOGLE CALENDAR SYNC HUB LOGIC
 // ============================================================================
-function showGcalFeedback(msg, isError = false) {
-  const box = document.getElementById('gcal-feedback-box');
+function showFeedbackBox(elementId, msg, isError = false) {
+  const box = document.getElementById(elementId);
   if (!box) return;
   box.classList.remove('hidden');
   box.style.backgroundColor = isError ? 'var(--rose-bg)' : 'var(--sage-bg)';
@@ -905,11 +1384,27 @@ function showGcalFeedback(msg, isError = false) {
   box.textContent = msg;
 }
 
+function showGcalFeedback(msg, isError = false) {
+  showFeedbackBox('gcal-feedback-box', msg, isError);
+}
+
 async function ensureGoogleCalendarToken() {
   const token = await getAccessToken();
   if (token) {
     state.hasGcalToken = true;
     return token;
+  }
+  const manualInput = document.getElementById('gcal-manual-token')?.value?.trim();
+  if (manualInput) {
+    setInMemoryAccessToken(manualInput);
+    state.hasGcalToken = true;
+    renderAll();
+    return manualInput;
+  }
+  if (!GOOGLE_LOGIN_ENABLED) {
+    throw new Error(
+      'Google Sign-In is disabled for now. Use "Sync iCal Feed" / "Download .ics" above, or paste a Google Calendar OAuth token in the token field.'
+    );
   }
   const res = await googleSignIn();
   if (res?.accessToken) {
@@ -926,16 +1421,30 @@ function renderGcalModalContent() {
   const descEl = document.getElementById('gcal-auth-status-desc');
   const btnTextEl = document.getElementById('gcal-signin-btn-text');
   const listEl = document.getElementById('gcal-synced-list');
+  const exportUrlInput = document.getElementById('gcal-export-ics-url');
+  const icalUrlInput = document.getElementById('gcal-ical-url');
+
+  if (exportUrlInput) {
+    exportUrlInput.value = `${window.location.origin}/api/calendar.ics`;
+  }
+  if (icalUrlInput && !icalUrlInput.value && state.settings.gcalIcalUrl) {
+    icalUrlInput.value = state.settings.gcalIcalUrl;
+  }
+
   if (!titleEl || !descEl || !btnTextEl || !listEl) return;
 
-  if (state.user && state.hasGcalToken) {
+  if (!GOOGLE_LOGIN_ENABLED) {
+    titleEl.textContent = state.hasGcalToken
+      ? 'Google Calendar API Token Active'
+      : 'Google Sign-In Disabled for Now';
+    descEl.textContent = state.hasGcalToken
+      ? 'In-memory OAuth token loaded — ready for two-way API sync'
+      : 'Use iCal (.ics) URL sync & phone calendar subscription below, or paste an API token';
+    btnTextEl.textContent = 'Google Login (Unavailable)';
+  } else if (state.user && state.hasGcalToken) {
     titleEl.textContent = 'Google Calendar Connected';
     descEl.textContent = `Authorized as ${state.user.email} — ready for two-way event sync`;
     btnTextEl.textContent = 'Reconnect Google';
-  } else if (state.user && !state.hasGcalToken) {
-    titleEl.textContent = 'Authorize Google Calendar Session';
-    descEl.textContent = `Signed in as ${state.user.email} — click Sign in with Google to activate Calendar API access`;
-    btnTextEl.textContent = 'Sign in with Google';
   } else {
     titleEl.textContent = 'Connect Google Calendar';
     descEl.textContent = 'Sign in with Google to authorize Calendar event sync';
@@ -949,7 +1458,7 @@ function renderGcalModalContent() {
   if (syncedTasks.length === 0) {
     listEl.innerHTML = `
       <div style="padding:16px 0;color:var(--text-muted);font-size:13px;">
-        No Google Calendar events synced yet. Use "Import Upcoming Events" or "Push Pending Deadlines" above.
+        No Google Calendar events synced yet. Paste your Google Calendar iCal (.ics) URL above or use API import/export.
       </div>
     `;
     return;
@@ -972,7 +1481,7 @@ function renderGcalModalContent() {
             task.gcalEventId
               ? `<button type="button" class="hdr-btn" data-remove-gcal-id="${escapeHtml(
                   task.id
-                )}" style="height:28px;padding:0 10px;font-size:11.5px;color:var(--rose-text);border-color:var(--rose-border);background:var(--rose-bg);">Delete from Google</button>`
+                )}" style="height:28px;padding:0 10px;font-size:11.5px;color:var(--rose-text);border-color:var(--rose-border);background:var(--rose-bg);">Remove</button>`
               : ''
           }
         </div>
@@ -984,19 +1493,21 @@ function renderGcalModalContent() {
     btn.addEventListener('click', () => {
       const taskId = btn.getAttribute('data-remove-gcal-id');
       const task = state.tasks.find((t) => t.id === taskId);
-      if (!task || !task.gcalEventId) return;
+      if (!task) return;
 
       const due = formatDueDate(task.dueDate);
       openGcalConfirmation({
-        title: 'Delete Event from Google Calendar?',
+        title: 'Remove Google Calendar Event?',
         description:
-          'Are you sure you want to permanently delete this event from your primary Google Calendar?',
+          'Remove this synced event from Calen (and from Google Calendar if an API token is active)?',
         items: [{ title: task.title, meta: due.text }],
-        confirmLabel: 'Delete from Google Calendar',
+        confirmLabel: 'Remove Event',
         onConfirm: async () => {
           try {
-            await ensureGoogleCalendarToken();
-            await deleteGoogleCalendarEvent(task.gcalEventId);
+            const token = await getAccessToken();
+            if (token && task.gcalEventId) {
+              await deleteGoogleCalendarEvent(task.gcalEventId);
+            }
             if (task.source === 'google_calendar') {
               state.tasks = state.tasks.filter((t) => t.id !== task.id);
               if (state.user) await deleteTaskFromFirestore(state.user.uid, task.id);
@@ -1006,9 +1517,9 @@ function renderGcalModalContent() {
             }
             saveLocalState();
             renderAll();
-            showGcalFeedback(`Deleted "${task.title}" from your Google Calendar.`);
+            showGcalFeedback(`Removed "${task.title}".`);
           } catch (err) {
-            showGcalFeedback(err.message || 'Failed to delete Google Calendar event.', true);
+            showGcalFeedback(err.message || 'Failed to remove Google Calendar event.', true);
           }
         }
       });
@@ -1021,6 +1532,79 @@ function openGcalModal() {
   if (box) box.classList.add('hidden');
   renderGcalModalContent();
   document.getElementById('modal-gcal').classList.remove('hidden');
+}
+
+async function handleGcalIcalUrlSync() {
+  const urlInput = document.getElementById('gcal-ical-url');
+  const url = urlInput?.value?.trim();
+  if (!url) {
+    showGcalFeedback('Please paste your Google Calendar Secret address in iCal (.ics) format.', true);
+    return;
+  }
+  try {
+    showGcalFeedback('Fetching Google Calendar iCal (.ics) feed via local server...');
+    const res = await fetch('/api/proxy/ical', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url })
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      throw new Error(data.error || 'Failed to fetch Google Calendar iCal URL.');
+    }
+    const events = parseIcsEvents(data.ics, 'google_calendar', 'Google Calendar');
+    const { added, updated } = mergeImportedTasks(events);
+    state.settings.gcalIcalUrl = url;
+    saveLocalState();
+    renderAll();
+    showGcalFeedback(
+      `Synced ${events.length} Google Calendar event(s) (${added} new, ${updated} updated).`
+    );
+  } catch (err) {
+    showGcalFeedback(err.message || 'Could not sync Google Calendar iCal feed.', true);
+  }
+}
+
+function downloadClientIcsFile() {
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+  const lines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Calen//Unified Academic Planner//EN',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+    'X-WR-CALNAME:Calen Deadlines',
+    'X-WR-TIMEZONE:Asia/Manila'
+  ];
+  for (const task of state.tasks) {
+    if (!task.dueDate) continue;
+    const endDt = new Date(task.dueDate);
+    if (Number.isNaN(endDt.getTime())) continue;
+    const startDt = new Date(endDt.getTime() - 60 * 60 * 1000);
+    const dtStart = startDt.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+    const dtEnd = endDt.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+    const title = `${task.status === 'completed' ? '[Done] ' : ''}${
+      task.course ? `[${task.course}] ` : ''
+    }${task.title}`.replace(/[,;\\]/g, ' ');
+    lines.push(
+      'BEGIN:VEVENT',
+      `UID:${task.id}@calen.local`,
+      `DTSTAMP:${stamp}`,
+      `DTSTART:${dtStart}`,
+      `DTEND:${dtEnd}`,
+      `SUMMARY:${title}`,
+      'END:VEVENT'
+    );
+  }
+  lines.push('END:VCALENDAR');
+  const blob = new Blob([lines.join('\r\n')], { type: 'text/calendar;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'calen-deadlines.ics';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  showGcalFeedback('Downloaded calen-deadlines.ics! Import it into Google Calendar or your phone calendar.');
 }
 
 async function handleGcalImport() {
@@ -1077,7 +1661,7 @@ async function handleGcalImport() {
 function handleGcalBulkExportPrompt() {
   const pendingTasks = state.tasks.filter((t) => t.status !== 'completed');
   if (pendingTasks.length === 0) {
-    showGcalFeedback('No pending assignments to push — create a task first.', true);
+    showGcalFeedback('All tasks are already completed — no pending deadlines to push.', true);
     return;
   }
 
@@ -1113,7 +1697,7 @@ function handleGcalBulkExportPrompt() {
 }
 
 // ============================================================================
-// OTHER MODALS LOGIC
+// OTHER MODALS LOGIC (TASK, MOODLE, CLASSROOM, SETTINGS)
 // ============================================================================
 function openNewTaskModal(prefillDateStr = null) {
   state.editingTaskId = null;
@@ -1216,94 +1800,319 @@ function renderDraftSubtasks() {
   });
 }
 
-function openMoodleModal() {
+// ============================================================================
+// MOODLE LMS MODAL & SYNC
+// ============================================================================
+function renderMoodleCoursesList() {
   const listEl = document.getElementById('moodle-courses-list');
   if (!listEl) return;
 
-  if (state.moodleCourses.length === 0) {
-    listEl.innerHTML = `
-      <div style="padding:14px 0;font-size:13px;color:var(--text-muted);">
-        No Moodle courses added yet. Add a course above or paste your Moodle iCal (.ics) feed below.
-      </div>
-    `;
-  } else {
-    listEl.innerHTML = state.moodleCourses
-      .map(
-        (course) => `
-        <label class="course-item" data-course-id="${escapeHtml(course.id)}">
-          <div style="display:flex;align-items:center;gap:12px;">
-            <input type="checkbox" class="moodle-course-chk" value="${escapeHtml(course.id)}" ${
-          course.synced ? 'checked' : ''
-        } />
-            <div>
-              <div style="font-weight:600;font-size:13.5px;">${escapeHtml(
-                course.code
-              )} — ${escapeHtml(course.name)}</div>
-            </div>
+  listEl.innerHTML = state.moodleCourses
+    .map(
+      (course) => `
+      <label class="course-item" data-course-id="${escapeHtml(course.id)}">
+        <div style="display:flex;align-items:center;gap:12px;">
+          <input type="checkbox" class="moodle-course-chk" value="${escapeHtml(course.id)}" ${
+            course.synced ? 'checked' : ''
+          } />
+          <div>
+            <div style="font-weight:600;font-size:13.5px;">${escapeHtml(
+              course.code
+            )} — ${escapeHtml(course.name)}</div>
+            <div style="font-size:12px;color:var(--text-secondary);">${escapeHtml(
+              course.instructor
+            )} · ${course.assignments?.length || 0} module deadlines</div>
           </div>
-          <span class="badge ${course.synced ? 'badge-peach' : 'badge-stone'}">${
-          course.synced ? 'Synced' : 'Paused'
+        </div>
+        <span class="badge ${course.synced ? 'badge-peach' : 'badge-stone'}">${
+          course.synced ? 'Synced' : 'Available'
         }</span>
-        </label>
-      `
-      )
-      .join('');
+      </label>
+    `
+    )
+    .join('');
 
-    listEl.querySelectorAll('.moodle-course-chk').forEach((chk) => {
-      chk.addEventListener('change', async () => {
-        const course = state.moodleCourses.find((c) => c.id === chk.value);
-        if (course) {
-          course.synced = chk.checked;
-          saveLocalState();
-          openMoodleModal();
-          renderAll();
-          if (state.user) {
-            await saveMoodleCoursesToFirestore(state.user.uid, state.moodleCourses);
-          }
-        }
-      });
+  listEl.querySelectorAll('.moodle-course-chk').forEach((chk) => {
+    chk.addEventListener('change', () => {
+      const course = state.moodleCourses.find((c) => c.id === chk.value);
+      if (course) {
+        course.synced = chk.checked;
+        renderMoodleCoursesList();
+      }
     });
-  }
+  });
+}
 
+function openMoodleModal() {
+  const box = document.getElementById('moodle-feedback-box');
+  if (box) box.classList.add('hidden');
+  const urlInput = document.getElementById('moodle-url');
+  if (urlInput && state.settings.moodleUrl) {
+    urlInput.value = state.settings.moodleUrl;
+  }
+  const icalUrlInput = document.getElementById('moodle-ical-url');
+  if (icalUrlInput && state.settings.moodleIcalUrl) {
+    icalUrlInput.value = state.settings.moodleIcalUrl;
+  }
+  renderMoodleCoursesList();
   document.getElementById('modal-moodle').classList.remove('hidden');
 }
 
-function openPlatformImportModal(platformKey) {
-  const meta = {
-    google_classroom: {
-      title: 'Google Classroom · Schedule & Coursework',
-      subtitle: 'Add coursework deadlines or paste your Google Classroom calendar (.ics) feed'
-    },
-    notion: {
-      title: 'Notion · Workspace & Study Databases',
-      subtitle: 'Add study milestones or paste your Notion Calendar (.ics) feed'
-    },
-    trello: {
-      title: 'Trello · Project Sprints & Cards',
-      subtitle: 'Add board deadlines or paste your Trello Calendar power-up (.ics) feed'
+async function handleFetchMoodleApi() {
+  const moodleUrl = document.getElementById('moodle-url')?.value?.trim();
+  const token = document.getElementById('moodle-token')?.value?.trim();
+  if (!moodleUrl || !token) {
+    showFeedbackBox('moodle-feedback-box', 'Enter your Moodle URL and WebService token.', true);
+    return;
+  }
+  if (moodleUrl.includes('moodle.university.edu') || token === 'mdl_ws_98f4a21c7e3b') {
+    showFeedbackBox(
+      'moodle-feedback-box',
+      'Demo Moodle credentials detected — synced the built-in Moodle courses below. Replace with your school Moodle URL & token or paste your Moodle Calendar iCal URL below for live school data!'
+    );
+    return;
+  }
+
+  try {
+    showFeedbackBox('moodle-feedback-box', 'Connecting to Moodle REST API via local server...');
+    const res = await fetch('/api/proxy/moodle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ moodleUrl, token })
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      throw new Error(data.error || 'Failed to connect to Moodle REST API.');
     }
-  }[platformKey] || {
-    title: 'Connect External Calendar',
-    subtitle: 'Import an iCal (.ics) schedule feed or add a deadline'
-  };
+    if (Array.isArray(data.courses) && data.courses.length > 0) {
+      state.moodleCourses = data.courses;
+      state.settings.moodleUrl = moodleUrl;
+      renderMoodleCoursesList();
+      showFeedbackBox(
+        'moodle-feedback-box',
+        `Connected to ${data.siteName || 'Moodle'}! Loaded ${data.courses.length} enrolled course(s). Click "Sync Selected Courses" to save.`
+      );
+    } else {
+      showFeedbackBox('moodle-feedback-box', 'Connected to Moodle, but no active courses were returned.', true);
+    }
+  } catch (err) {
+    showFeedbackBox('moodle-feedback-box', err.message || 'Moodle API request failed.', true);
+  }
+}
 
-  document.getElementById('platform-modal-source').value = platformKey;
-  document.getElementById('platform-modal-title').textContent = meta.title;
-  document.getElementById('platform-modal-subtitle').textContent = meta.subtitle;
-  document.getElementById('platform-quick-course').value = '';
-  document.getElementById('platform-quick-title').value = '';
-  document.getElementById('platform-ical-input').value = '';
+async function handleFetchMoodleIcalUrl() {
+  const url = document.getElementById('moodle-ical-url')?.value?.trim();
+  if (!url) {
+    showFeedbackBox('moodle-feedback-box', 'Please paste your Moodle Calendar Export (.ics) URL.', true);
+    return;
+  }
+  try {
+    showFeedbackBox('moodle-feedback-box', 'Fetching Moodle iCal (.ics) feed via local server...');
+    const res = await fetch('/api/proxy/ical', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url })
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      throw new Error(data.error || 'Failed to fetch Moodle iCal feed.');
+    }
+    const events = parseIcsEvents(data.ics, 'moodle', 'Moodle iCal');
+    const { added, updated } = mergeImportedTasks(events);
+    state.settings.moodleIcalUrl = url;
+    saveLocalState();
+    renderAll();
+    showFeedbackBox(
+      'moodle-feedback-box',
+      `Synced ${events.length} Moodle deadline(s) (${added} new, ${updated} updated)!`
+    );
+  } catch (err) {
+    showFeedbackBox('moodle-feedback-box', err.message || 'Failed to sync Moodle iCal URL.', true);
+  }
+}
 
-  const d = new Date();
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  document.getElementById('platform-quick-date').value = `${yyyy}-${mm}-${dd}`;
+async function applyMoodleCourseSync() {
+  const syncedCourseIds = new Set(state.moodleCourses.filter((c) => c.synced).map((c) => c.code));
 
-  const fb = document.getElementById('platform-feedback-box');
-  if (fb) fb.classList.add('hidden');
+  const nonCourseMoodleTasks = state.tasks.filter(
+    (t) =>
+      t.source !== 'moodle' || (!t.id.startsWith('mdl-task-') && syncedCourseIds.has(t.course))
+  );
 
-  document.getElementById('modal-platform-import').classList.remove('hidden');
+  const courseAssignments = state.moodleCourses
+    .filter((c) => c.synced)
+    .flatMap((c) => c.assignments || []);
+
+  const mergedMap = new Map();
+  nonCourseMoodleTasks.forEach((t) => mergedMap.set(t.id, t));
+  courseAssignments.forEach((t) => {
+    const existing = state.tasks.find((ex) => ex.id === t.id);
+    mergedMap.set(t.id, existing || t);
+  });
+
+  state.tasks = Array.from(mergedMap.values());
+  saveLocalState();
+  renderAll();
+
+  if (state.user) {
+    await saveMoodleCoursesToFirestore(state.user.uid, state.moodleCourses);
+    for (const t of courseAssignments) {
+      await saveTaskToFirestore(state.user.uid, t);
+    }
+  }
+
+  document.getElementById('modal-moodle').classList.add('hidden');
+}
+
+// ============================================================================
+// GOOGLE CLASSROOM MODAL & SYNC
+// ============================================================================
+function renderClassroomCoursesList() {
+  const listEl = document.getElementById('classroom-courses-list');
+  if (!listEl) return;
+
+  listEl.innerHTML = state.classroomCourses
+    .map(
+      (course) => `
+      <label class="course-item" data-classroom-id="${escapeHtml(course.id)}">
+        <div style="display:flex;align-items:center;gap:12px;">
+          <input type="checkbox" class="classroom-course-chk" value="${escapeHtml(course.id)}" ${
+            course.synced ? 'checked' : ''
+          } />
+          <div>
+            <div style="font-weight:600;font-size:13.5px;">${escapeHtml(
+              course.code
+            )} — ${escapeHtml(course.name)}</div>
+            <div style="font-size:12px;color:var(--text-secondary);">${escapeHtml(
+              course.instructor
+            )} · ${course.assignments?.length || 0} coursework items</div>
+          </div>
+        </div>
+        <span class="badge ${course.synced ? 'badge-sage' : 'badge-stone'}">${
+          course.synced ? 'Synced' : 'Available'
+        }</span>
+      </label>
+    `
+    )
+    .join('');
+
+  listEl.querySelectorAll('.classroom-course-chk').forEach((chk) => {
+    chk.addEventListener('change', () => {
+      const course = state.classroomCourses.find((c) => c.id === chk.value);
+      if (course) {
+        course.synced = chk.checked;
+        renderClassroomCoursesList();
+      }
+    });
+  });
+}
+
+function openClassroomModal() {
+  const box = document.getElementById('classroom-feedback-box');
+  if (box) box.classList.add('hidden');
+  const icalInput = document.getElementById('classroom-ical-url');
+  if (icalInput && state.settings.classroomIcalUrl) {
+    icalInput.value = state.settings.classroomIcalUrl;
+  }
+  renderClassroomCoursesList();
+  document.getElementById('modal-classroom').classList.remove('hidden');
+}
+
+async function handleClassroomIcalSync() {
+  const url = document.getElementById('classroom-ical-url')?.value?.trim();
+  if (!url) {
+    showFeedbackBox(
+      'classroom-feedback-box',
+      'Paste your Google Classroom Calendar iCal (.ics) URL (from Google Calendar -> Settings for class calendar -> Secret address in iCal format).',
+      true
+    );
+    return;
+  }
+  try {
+    showFeedbackBox('classroom-feedback-box', 'Fetching Google Classroom iCal feed...');
+    const res = await fetch('/api/proxy/ical', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url })
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      throw new Error(data.error || 'Failed to fetch Classroom iCal feed.');
+    }
+    const events = parseIcsEvents(data.ics, 'google_classroom', 'Google Classroom');
+    const { added, updated } = mergeImportedTasks(events);
+    state.settings.classroomIcalUrl = url;
+    saveLocalState();
+    renderAll();
+    showFeedbackBox(
+      'classroom-feedback-box',
+      `Synced ${events.length} Google Classroom assignment(s) (${added} new, ${updated} updated)!`
+    );
+  } catch (err) {
+    showFeedbackBox('classroom-feedback-box', err.message || 'Classroom iCal sync failed.', true);
+  }
+}
+
+async function handleFetchClassroomApi() {
+  const accessToken = document.getElementById('classroom-api-token')?.value?.trim();
+  if (!accessToken) {
+    showFeedbackBox(
+      'classroom-feedback-box',
+      'Paste a Google OAuth Bearer token with Classroom read scopes.',
+      true
+    );
+    return;
+  }
+  try {
+    showFeedbackBox('classroom-feedback-box', 'Fetching courses & coursework from Google Classroom API...');
+    const res = await fetch('/api/proxy/classroom', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accessToken })
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      throw new Error(data.error || 'Failed to fetch Google Classroom courses.');
+    }
+    if (Array.isArray(data.courses) && data.courses.length > 0) {
+      state.classroomCourses = data.courses;
+      renderClassroomCoursesList();
+      showFeedbackBox(
+        'classroom-feedback-box',
+        `Loaded ${data.courses.length} active Google Classroom course(s)! Click "Sync Selected Classes" to save.`
+      );
+    } else {
+      showFeedbackBox('classroom-feedback-box', 'No active Google Classroom courses found for this account.', true);
+    }
+  } catch (err) {
+    showFeedbackBox('classroom-feedback-box', err.message || 'Classroom API request failed.', true);
+  }
+}
+
+function applyClassroomCourseSync() {
+  const syncedCodes = new Set(state.classroomCourses.filter((c) => c.synced).map((c) => c.code));
+
+  const nonCourseClassroomTasks = state.tasks.filter(
+    (t) =>
+      t.source !== 'google_classroom' ||
+      (!t.id.startsWith('task-gc-') && !t.id.startsWith('gc-work-') && syncedCodes.has(t.course))
+  );
+
+  const courseAssignments = state.classroomCourses
+    .filter((c) => c.synced)
+    .flatMap((c) => c.assignments || []);
+
+  const mergedMap = new Map();
+  nonCourseClassroomTasks.forEach((t) => mergedMap.set(t.id, t));
+  courseAssignments.forEach((t) => {
+    const existing = state.tasks.find((ex) => ex.id === t.id);
+    mergedMap.set(t.id, existing || t);
+  });
+
+  state.tasks = Array.from(mergedMap.values());
+  saveLocalState();
+  renderAll();
+  document.getElementById('modal-classroom').classList.add('hidden');
 }
 
 function openSettingsModal() {
@@ -1319,57 +2128,41 @@ function openSettingsModal() {
     moodleToggle.checked = state.settings.platforms.moodle !== false;
   }
 
+  const classroomToggle = document.getElementById('toggle-plat-classroom');
+  if (classroomToggle) {
+    classroomToggle.checked = state.settings.platforms.google_classroom !== false;
+  }
+
   const listEl = document.getElementById('settings-integrations-list');
   if (listEl) {
     const platforms = [
       {
-        key: 'google_classroom',
-        name: 'Google Classroom',
-        desc: 'Sync coursework deadlines and class calendar feeds',
-        btnClass: 'pastel-sage'
-      },
-      {
         key: 'notion',
         name: 'Notion Workspace',
-        desc: 'Sync study databases, reading lists, and Notion Calendar',
-        btnClass: ''
+        desc: 'Sync study databases and reading lists'
       },
       {
         key: 'trello',
         name: 'Trello Boards',
-        desc: 'Sync project sprints and group milestone cards',
-        btnClass: 'pastel-sky'
+        desc: 'Sync project sprints and group milestones'
       }
     ];
 
     listEl.innerHTML = platforms
-      .map((p) => {
-        const count = state.tasks.filter((t) => t.source === p.key).length;
-        const btnLabel = count > 0 ? `Connect / Import (${count})` : 'Connect / Import';
-        return `
-        <div class="course-item">
+      .map(
+        (p) => `
+        <label class="course-item">
           <div>
             <div style="font-size:13.5px;font-weight:600;">${p.name}</div>
             <div style="font-size:12px;color:var(--text-secondary);">${p.desc}</div>
           </div>
-          <div style="display:flex;align-items:center;gap:10px;">
-            <button type="button" data-open-platform="${p.key}" class="hdr-btn ${p.btnClass}" style="height:30px;padding:0 10px;font-size:12px;">
-              <span>${btnLabel}</span>
-            </button>
-            <input type="checkbox" data-platform-toggle="${p.key}" aria-label="Show ${p.name}" ${
-              state.settings.platforms[p.key] !== false ? 'checked' : ''
-            } />
-          </div>
-        </div>
-      `;
-      })
+          <input type="checkbox" data-platform-toggle="${p.key}" ${
+            state.settings.platforms[p.key] !== false ? 'checked' : ''
+          } />
+        </label>
+      `
+      )
       .join('');
-
-    listEl.querySelectorAll('[data-open-platform]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        openPlatformImportModal(btn.getAttribute('data-open-platform'));
-      });
-    });
 
     listEl.querySelectorAll('[data-platform-toggle]').forEach((chk) => {
       chk.addEventListener('change', async () => {
@@ -1398,28 +2191,76 @@ function openSettingsModal() {
 // EVENT LISTENERS & INITIALIZATION
 // ============================================================================
 function initEvents() {
-  document.getElementById('tab-tasks').addEventListener('click', () => {
-    state.activeView = 'tasks';
-    document.getElementById('tab-tasks').classList.add('active');
-    document.getElementById('tab-calendar').classList.remove('active');
-    document.getElementById('view-tasks').classList.remove('hidden');
-    document.getElementById('view-calendar').classList.add('hidden');
+  // Keep keyboard focus inside the active dialog and restore its trigger on close.
+  const dialogStack = [];
+  document.querySelectorAll('.modal-overlay').forEach((dialog) => {
+    let wasOpen = !dialog.classList.contains('hidden');
+    let trigger = null;
+    new MutationObserver(() => {
+      const open = !dialog.classList.contains('hidden');
+      if (open === wasOpen) return;
+      wasOpen = open;
+      if (open) {
+        trigger = document.activeElement;
+        dialogStack.push(dialog);
+        dialog.querySelector('button:not([disabled]), input:not([type="hidden"]), select, textarea')?.focus();
+      } else {
+        const index = dialogStack.indexOf(dialog);
+        if (index !== -1) dialogStack.splice(index, 1);
+        if (trigger?.isConnected) trigger.focus();
+      }
+    }).observe(dialog, { attributes: true, attributeFilter: ['class'] });
   });
-
-  document.getElementById('tab-calendar').addEventListener('click', () => {
-    state.activeView = 'calendar';
-    document.getElementById('tab-calendar').classList.add('active');
-    document.getElementById('tab-tasks').classList.remove('active');
-    document.getElementById('view-calendar').classList.remove('hidden');
-    document.getElementById('view-tasks').classList.add('hidden');
-    renderCalendarSection();
+  document.addEventListener('keydown', (event) => {
+    const dialog = dialogStack.at(-1);
+    if (!dialog) return;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      dialog.querySelector('[id^="close-"]')?.click();
+    }
+    if (event.key === 'Tab') {
+      const controls = [...dialog.querySelectorAll('button, input, select, textarea, a[href], [tabindex="0"]')]
+        .filter(el => !el.disabled && el.getClientRects().length);
+      const first = controls[0], last = controls.at(-1);
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    }
+  });
+  document.querySelectorAll('[data-view]').forEach((button) => {
+    button.addEventListener('click', () => selectView(button.dataset.view));
+  });
+  document.querySelectorAll('[data-open-settings]').forEach((button) => {
+    button.addEventListener('click', () => {
+      openSettingsModal();
+      if (button.dataset.openSettings === 'connections') {
+        document.getElementById('btn-gcal-modal').scrollIntoView({ block: 'center' });
+      }
+    });
+  });
+  document.querySelectorAll('[data-source]').forEach((button) => {
+    button.addEventListener('click', () => {
+      state.sourceFilter = button.dataset.source;
+      document.getElementById('filter-source').value = state.sourceFilter;
+      selectView('tasks');
+      renderAll();
+    });
+  });
+  document.getElementById('toggle-sidebar').addEventListener('click', (event) => {
+    const collapsed = document.body.classList.toggle('sidebar-collapsed');
+    event.currentTarget.setAttribute('aria-expanded', String(!collapsed));
+    event.currentTarget.setAttribute('aria-label', collapsed ? 'Expand sidebar' : 'Collapse sidebar');
+  });
+  document.getElementById('filter-course').addEventListener('change', (event) => {
+    state.courseFilter = event.target.value;
+    renderTasksSection();
   });
 
   document.querySelectorAll('.subview-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
       state.subView = btn.getAttribute('data-subview');
-      document.querySelectorAll('.subview-btn').forEach((b) => b.classList.remove('active'));
+      document.querySelectorAll('.subview-btn').forEach((b) => { b.classList.remove('active'); b.setAttribute('aria-pressed', 'false'); });
       btn.classList.add('active');
+      btn.setAttribute('aria-pressed', 'true');
       renderTasksSection();
     });
   });
@@ -1467,10 +2308,12 @@ function initEvents() {
     await persistTask(newTask);
   });
 
+  // Top Header & Unified Settings Modal Triggers
   document.getElementById('btn-new-task').addEventListener('click', () => openNewTaskModal());
   document.getElementById('btn-settings-modal').addEventListener('click', openSettingsModal);
   document.getElementById('btn-gcal-modal').addEventListener('click', openGcalModal);
   document.getElementById('btn-moodle-modal').addEventListener('click', openMoodleModal);
+  document.getElementById('btn-classroom-modal').addEventListener('click', openClassroomModal);
 
   document.getElementById('toggle-plat-gcal').addEventListener('change', async (e) => {
     state.settings.platforms.google_calendar = e.target.checked;
@@ -1490,7 +2333,16 @@ function initEvents() {
     }
   });
 
-  const toggleThemeMode = async () => {
+  document.getElementById('toggle-plat-classroom').addEventListener('change', async (e) => {
+    state.settings.platforms.google_classroom = e.target.checked;
+    saveLocalState();
+    renderAll();
+    if (state.user) {
+      await saveSettingsToFirestore(state.user.uid, state.settings);
+    }
+  });
+
+  document.getElementById('btn-theme-quick').addEventListener('click', async () => {
     const isCurrentlyDark = document.documentElement.classList.contains('dark');
     state.settings.theme = isCurrentlyDark ? 'light' : 'dark';
     saveLocalState();
@@ -1498,116 +2350,19 @@ function initEvents() {
     if (state.user) {
       await saveSettingsToFirestore(state.user.uid, state.settings);
     }
-  };
-
-  document.getElementById('btn-theme-quick').addEventListener('click', toggleThemeMode);
-  document.getElementById('btn-login-theme').addEventListener('click', toggleThemeMode);
-
-  // Login & Setup Screen Controls
-  document.getElementById('btn-login-google').addEventListener('click', async () => {
-    const errBox = document.getElementById('login-error-msg');
-    if (errBox) errBox.classList.add('hidden');
-    try {
-      // Use basic Google Sign-In (email & profile only) so any Google account can sign in
-      // without being blocked by Google's OAuth Testing Mode check for sensitive scopes.
-      const res = await googleSignInBasic();
-      if (res?.user) {
-        state.user = res.user;
-        state.hasGcalToken = Boolean(res.accessToken);
-        state.justSignedInSetup = true;
-        state.showLoginScreen = true;
-        renderAll();
-      }
-    } catch (err) {
-      if (errBox) {
-        errBox.classList.remove('hidden');
-        errBox.style.backgroundColor = 'var(--rose-bg)';
-        errBox.style.borderColor = 'var(--rose-border)';
-        errBox.style.color = 'var(--rose-text)';
-        errBox.textContent = err.message || 'Google Sign-In was cancelled or blocked by popup settings.';
-      }
-    }
-  });
-
-  document.getElementById('btn-login-guest').addEventListener('click', () => {
-    state.showLoginScreen = false;
-    state.justSignedInSetup = false;
-    renderAll();
-  });
-
-  document.getElementById('btn-login-finish').addEventListener('click', () => {
-    state.showLoginScreen = false;
-    state.justSignedInSetup = false;
-    renderAll();
-  });
-
-  document.getElementById('btn-login-switch-account').addEventListener('click', async () => {
-    try {
-      await logoutUser();
-      state.user = null;
-      state.hasGcalToken = false;
-      state.justSignedInSetup = false;
-      state.showLoginScreen = true;
-      renderAll();
-      const res = await googleSignInBasic();
-      if (res?.user) {
-        state.user = res.user;
-        state.hasGcalToken = Boolean(res.accessToken);
-        state.justSignedInSetup = true;
-        renderAll();
-      }
-    } catch (err) {
-      console.error('Switch account error:', err);
-    }
-  });
-
-  document.getElementById('btn-login-import-gcal').addEventListener('click', async () => {
-    const fb = document.getElementById('login-setup-feedback');
-    if (fb) {
-      fb.classList.remove('hidden');
-      fb.textContent = 'Authorizing Google Calendar API & importing upcoming events...';
-    }
-    try {
-      await ensureGoogleCalendarToken();
-      await handleGcalImport();
-      const gcalCount = state.tasks.filter(
-        (t) => t.source === 'google_calendar' || Boolean(t.gcalEventId)
-      ).length;
-      if (fb) {
-        fb.textContent = `Synced ${gcalCount} Google Calendar event(s). Click "Open My Workspace" below to view your schedule.`;
-      }
-    } catch (err) {
-      if (fb) {
-        fb.innerHTML = `Could not authorize live Calendar API for <strong>${escapeHtml(
-          state.user?.email || 'this email'
-        )}</strong> (if Google showed <em>Error 403: access_denied</em>, add this email under <strong>Google Cloud Console → OAuth consent screen → Test users</strong>, or click <strong>Open My Workspace</strong> to import via Google Calendar <code>.ics</code> in Settings).`;
-      }
-    }
-  });
-
-  document.getElementById('btn-open-login-screen').addEventListener('click', () => {
-    document.getElementById('modal-settings').classList.add('hidden');
-    state.justSignedInSetup = Boolean(state.user);
-    state.showLoginScreen = true;
-    renderAll();
   });
 
   const handleCloudAuthClick = async () => {
+    if (!GOOGLE_LOGIN_ENABLED) return;
     try {
       if (state.user) {
         await logoutUser();
-        state.user = null;
         state.hasGcalToken = false;
-        state.justSignedInSetup = false;
-        state.showLoginScreen = true;
-        document.getElementById('modal-settings').classList.add('hidden');
         renderAll();
       } else {
-        const res = await googleSignInBasic();
-        if (res?.user) {
-          state.user = res.user;
-          state.hasGcalToken = Boolean(res.accessToken);
-          state.showLoginScreen = false;
+        const res = await googleSignIn();
+        if (res?.accessToken) {
+          state.hasGcalToken = true;
           renderAll();
         }
       }
@@ -1624,8 +2379,9 @@ function initEvents() {
     document.getElementById('modal-gcal').classList.add('hidden');
   });
   document.getElementById('btn-gcal-google-signin').addEventListener('click', async () => {
+    if (!GOOGLE_LOGIN_ENABLED) return;
     try {
-      const res = await googleSignIn({ includeCalendarScope: true });
+      const res = await googleSignIn();
       if (res?.accessToken) {
         state.user = res.user;
         state.hasGcalToken = true;
@@ -1633,66 +2389,32 @@ function initEvents() {
         showGcalFeedback('Connected to Google Calendar! You can now import or push events.');
       }
     } catch (err) {
-      showGcalFeedback(
-        'If Google showed "Error 403: access_denied", add this email under Google Cloud Console → OAuth consent screen → Test users, or import your Google Calendar .ics below.',
-        true
-      );
+      showGcalFeedback(err.message || 'Google Sign-In failed.', true);
     }
+  });
+  document.getElementById('btn-gcal-ical-sync').addEventListener('click', handleGcalIcalUrlSync);
+  document.getElementById('btn-copy-ics-url').addEventListener('click', () => {
+    const input = document.getElementById('gcal-export-ics-url');
+    navigator.clipboard?.writeText(input.value);
+    showGcalFeedback('Copied live iCal (.ics) feed URL! Add it in Google Calendar -> "From URL".');
+  });
+  document.getElementById('btn-download-ics').addEventListener('click', downloadClientIcsFile);
+  document.getElementById('btn-gcal-save-token').addEventListener('click', () => {
+    const token = document.getElementById('gcal-manual-token')?.value?.trim();
+    if (!token) {
+      setInMemoryAccessToken(null);
+      state.hasGcalToken = false;
+      renderAll();
+      showGcalFeedback('Cleared in-memory Google Calendar API token.');
+      return;
+    }
+    setInMemoryAccessToken(token);
+    state.hasGcalToken = true;
+    renderAll();
+    showGcalFeedback('In-memory Google Calendar API token set! You can now use Import/Push via API.');
   });
   document.getElementById('btn-gcal-import').addEventListener('click', handleGcalImport);
   document.getElementById('btn-gcal-export').addEventListener('click', handleGcalBulkExportPrompt);
-
-  const gcalIcalBtn = document.getElementById('btn-gcal-parse-ical');
-  if (gcalIcalBtn) {
-    gcalIcalBtn.addEventListener('click', async () => {
-      const raw = document.getElementById('gcal-ical-input').value.trim();
-      if (!raw) return;
-
-      const blocks = raw.split('BEGIN:VEVENT').slice(1);
-      const imported = [];
-      blocks.forEach((b, i) => {
-        const summaryMatch = b.match(/SUMMARY:(.*)/);
-        const dtMatch =
-          b.match(/DTEND(?:;[^:]*)?:(\d{8}T\d{6}Z?)/) ||
-          b.match(/DTSTART(?:;[^:]*)?:(\d{8}T\d{6}Z?)/);
-        const title = summaryMatch ? summaryMatch[1].trim() : `Google Calendar Event #${i + 1}`;
-        let dueDate = offsetDateISO(2, 23, 59);
-        if (dtMatch) {
-          const s = dtMatch[1];
-          const iso = `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}T${s.slice(
-            9,
-            11
-          )}:${s.slice(11, 13)}:00Z`;
-          const parsed = new Date(iso);
-          if (!Number.isNaN(parsed.getTime())) dueDate = parsed.toISOString();
-        }
-        imported.push({
-          id: `gcal-ical-${Date.now()}-${i}`,
-          title,
-          priority: 'medium',
-          status: 'todo',
-          source: 'google_calendar',
-          course: 'Google Calendar',
-          dueDate,
-          description: 'Imported via Google Calendar iCal (.ics) feed',
-          subtasks: []
-        });
-      });
-
-      if (imported.length > 0) {
-        state.tasks = [...imported, ...state.tasks];
-        document.getElementById('gcal-ical-input').value = '';
-        saveLocalState();
-        renderAll();
-        if (state.user) {
-          for (const t of imported) {
-            await saveTaskToFirestore(state.user.uid, t);
-          }
-        }
-        showGcalFeedback(`Imported ${imported.length} event(s) from Google Calendar .ics file.`);
-      }
-    });
-  }
 
   document.getElementById('close-confirm-gcal').addEventListener('click', closeGcalConfirmation);
   document
@@ -1845,75 +2567,24 @@ function initEvents() {
     }
   });
 
-  // Moodle Modal Controls
+  // Moodle Modal Listeners
   document.getElementById('close-moodle-modal').addEventListener('click', () => {
     document.getElementById('modal-moodle').classList.add('hidden');
   });
-  document.getElementById('btn-save-moodle').addEventListener('click', () => {
-    document.getElementById('modal-moodle').classList.add('hidden');
-  });
-
-  document.getElementById('btn-add-moodle-course').addEventListener('click', async () => {
-    const codeEl = document.getElementById('new-moodle-code');
-    const nameEl = document.getElementById('new-moodle-name');
-    const code = codeEl.value.trim();
-    const name = nameEl.value.trim();
-    if (!code || !name) return;
-
-    const newCourse = {
-      id: `moodle-course-${Date.now()}`,
-      code,
-      name,
-      synced: true
-    };
-    state.moodleCourses.push(newCourse);
-    codeEl.value = '';
-    nameEl.value = '';
-    saveLocalState();
-    openMoodleModal();
-    renderAll();
-    if (state.user) {
-      await saveMoodleCoursesToFirestore(state.user.uid, state.moodleCourses);
-    }
-  });
+  document.getElementById('btn-fetch-moodle-api').addEventListener('click', handleFetchMoodleApi);
+  document.getElementById('btn-fetch-moodle-ical-url').addEventListener('click', handleFetchMoodleIcalUrl);
+  document.getElementById('btn-save-moodle').addEventListener('click', applyMoodleCourseSync);
 
   document.getElementById('btn-parse-ical').addEventListener('click', async () => {
     const raw = document.getElementById('moodle-ical-input').value.trim();
-    if (!raw) return;
+    if (!raw) {
+      showFeedbackBox('moodle-feedback-box', 'Paste VEVENT / VCALENDAR text first.', true);
+      return;
+    }
 
-    const blocks = raw.split('BEGIN:VEVENT').slice(1);
-    const imported = [];
-    blocks.forEach((b, i) => {
-      const summaryMatch = b.match(/SUMMARY:(.*)/);
-      const dtMatch =
-        b.match(/DTEND(?:;[^:]*)?:(\d{8}T\d{6}Z?)/) ||
-        b.match(/DTSTART(?:;[^:]*)?:(\d{8}T\d{6}Z?)/);
-      const title = summaryMatch ? summaryMatch[1].trim() : `Moodle Event #${i + 1}`;
-      let dueDate = offsetDateISO(2, 23, 59);
-      if (dtMatch) {
-        const s = dtMatch[1];
-        const iso = `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}T${s.slice(
-          9,
-          11
-        )}:${s.slice(11, 13)}:00Z`;
-        const parsed = new Date(iso);
-        if (!Number.isNaN(parsed.getTime())) dueDate = parsed.toISOString();
-      }
-      imported.push({
-        id: `mdl-ical-${Date.now()}-${i}`,
-        title,
-        priority: 'high',
-        status: 'todo',
-        source: 'moodle',
-        course: 'Moodle iCal',
-        dueDate,
-        description: 'Imported via Moodle iCal (.ics) feed',
-        subtasks: []
-      });
-    });
-
+    const imported = parseIcsEvents(raw, 'moodle', 'Moodle iCal');
     if (imported.length > 0) {
-      state.tasks = [...imported, ...state.tasks];
+      const { added, updated } = mergeImportedTasks(imported);
       document.getElementById('moodle-ical-input').value = '';
       saveLocalState();
       renderAll();
@@ -1922,104 +2593,22 @@ function initEvents() {
           await saveTaskToFirestore(state.user.uid, t);
         }
       }
-      document.getElementById('modal-moodle').classList.add('hidden');
+      showFeedbackBox(
+        'moodle-feedback-box',
+        `Imported ${imported.length} Moodle iCal event(s) (${added} new, ${updated} updated)!`
+      );
+    } else {
+      showFeedbackBox('moodle-feedback-box', 'No valid VEVENT blocks found in pasted text.', true);
     }
   });
 
-  // External Platform Import Modal (Google Classroom, Notion, Trello, iCal)
-  document.getElementById('close-platform-modal').addEventListener('click', () => {
-    document.getElementById('modal-platform-import').classList.add('hidden');
+  // Classroom Modal Listeners
+  document.getElementById('close-classroom-modal').addEventListener('click', () => {
+    document.getElementById('modal-classroom').classList.add('hidden');
   });
-  document.getElementById('done-platform-modal').addEventListener('click', () => {
-    document.getElementById('modal-platform-import').classList.add('hidden');
-  });
-
-  document.getElementById('btn-platform-quick-add').addEventListener('click', async () => {
-    const source = document.getElementById('platform-modal-source').value || 'google_classroom';
-    const course = document.getElementById('platform-quick-course').value.trim();
-    const title = document.getElementById('platform-quick-title').value.trim();
-    const dateVal = document.getElementById('platform-quick-date').value;
-    if (!title) return;
-
-    const dueIso = dateVal ? new Date(`${dateVal}T23:59:00`).toISOString() : offsetDateISO(2, 23, 59);
-    const newTask = {
-      id: `${source}-${Date.now()}`,
-      title,
-      priority: 'medium',
-      status: 'todo',
-      source,
-      course: course || SOURCE_META[source]?.label || '',
-      dueDate: dueIso,
-      description: `Added via ${SOURCE_META[source]?.label || 'Platform'} integration.`,
-      subtasks: []
-    };
-
-    state.tasks.unshift(newTask);
-    document.getElementById('platform-quick-title').value = '';
-    await persistTask(newTask);
-    openSettingsModal();
-
-    const fb = document.getElementById('platform-feedback-box');
-    if (fb) {
-      fb.classList.remove('hidden');
-      fb.textContent = `Added "${title}" to your Master Task List.`;
-    }
-  });
-
-  document.getElementById('btn-platform-parse-ical').addEventListener('click', async () => {
-    const source = document.getElementById('platform-modal-source').value || 'google_classroom';
-    const raw = document.getElementById('platform-ical-input').value.trim();
-    if (!raw) return;
-
-    const blocks = raw.split('BEGIN:VEVENT').slice(1);
-    const imported = [];
-    blocks.forEach((b, i) => {
-      const summaryMatch = b.match(/SUMMARY:(.*)/);
-      const dtMatch =
-        b.match(/DTEND(?:;[^:]*)?:(\d{8}T\d{6}Z?)/) ||
-        b.match(/DTSTART(?:;[^:]*)?:(\d{8}T\d{6}Z?)/);
-      const title = summaryMatch ? summaryMatch[1].trim() : `Imported Event #${i + 1}`;
-      let dueDate = offsetDateISO(2, 23, 59);
-      if (dtMatch) {
-        const s = dtMatch[1];
-        const iso = `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}T${s.slice(
-          9,
-          11
-        )}:${s.slice(11, 13)}:00Z`;
-        const parsed = new Date(iso);
-        if (!Number.isNaN(parsed.getTime())) dueDate = parsed.toISOString();
-      }
-      imported.push({
-        id: `${source}-ical-${Date.now()}-${i}`,
-        title,
-        priority: 'medium',
-        status: 'todo',
-        source,
-        course: SOURCE_META[source]?.label || 'Calendar Feed',
-        dueDate,
-        description: `Imported via ${SOURCE_META[source]?.label || 'External'} iCal (.ics) feed`,
-        subtasks: []
-      });
-    });
-
-    if (imported.length > 0) {
-      state.tasks = [...imported, ...state.tasks];
-      document.getElementById('platform-ical-input').value = '';
-      saveLocalState();
-      renderAll();
-      openSettingsModal();
-      if (state.user) {
-        for (const t of imported) {
-          await saveTaskToFirestore(state.user.uid, t);
-        }
-      }
-      const fb = document.getElementById('platform-feedback-box');
-      if (fb) {
-        fb.classList.remove('hidden');
-        fb.textContent = `Imported ${imported.length} event(s) into ${SOURCE_META[source]?.label}.`;
-      }
-    }
-  });
+  document.getElementById('btn-classroom-ical-sync').addEventListener('click', handleClassroomIcalSync);
+  document.getElementById('btn-fetch-classroom-api').addEventListener('click', handleFetchClassroomApi);
+  document.getElementById('btn-save-classroom').addEventListener('click', applyClassroomCourseSync);
 
   document.getElementById('close-settings-modal').addEventListener('click', () => {
     document.getElementById('modal-settings').classList.add('hidden');
@@ -2039,14 +2628,19 @@ function initEvents() {
     });
   });
 
-  document.getElementById('btn-clear-workspace').addEventListener('click', async () => {
-    const previousTasks = [...state.tasks];
-    state.tasks = [];
-    state.moodleCourses = [];
+  document.getElementById('btn-reset-demo').addEventListener('click', async () => {
+    state.moodleCourses = structuredClone(DEFAULT_MOODLE_COURSES);
+    state.classroomCourses = structuredClone(DEFAULT_CLASSROOM_COURSES);
+    state.tasks = getInitialTasks();
     saveLocalState();
     renderAll();
-    if (state.user && previousTasks.length > 0) {
-      await clearAllTasksFromFirestore(state.user.uid, previousTasks);
+    if (state.user) {
+      await seedWorkspaceToFirestore(
+        state.user.uid,
+        state.tasks,
+        state.moodleCourses,
+        state.settings
+      );
     }
     document.getElementById('modal-settings').classList.add('hidden');
   });
@@ -2065,8 +2659,10 @@ function initEvents() {
     broadcast.onmessage = (event) => {
       if (event.data?.tasks) state.tasks = event.data.tasks;
       if (event.data?.moodleCourses) state.moodleCourses = event.data.moodleCourses;
+      if (event.data?.classroomCourses) state.classroomCourses = event.data.classroomCourses;
       if (event.data?.settings) state.settings = event.data.settings;
-      saveLocalState(false);
+      if (event.data?.updatedAt) state.updatedAt = event.data.updatedAt;
+      saveLocalState(false, false);
       renderAll();
     };
   }
@@ -2080,26 +2676,27 @@ function initEvents() {
     }
 
     if (user) {
-      if (!state.justSignedInSetup) {
-        state.showLoginScreen = false;
-      }
       state.unsubFirestore = subscribeUserWorkspace(user.uid, {
-        onTasks: async (cloudTasks) => {
-          // Purge any legacy demo tasks if they existed in cloud from earlier sessions
-          const demoTasksInCloud = cloudTasks.filter((t) => LEGACY_DEMO_TASK_IDS.has(t.id));
-          if (demoTasksInCloud.length > 0) {
-            await clearAllTasksFromFirestore(user.uid, demoTasksInCloud);
+        onTasks: async (cloudTasks, isEmpty) => {
+          if (isEmpty && state.tasks.length > 0) {
+            await seedWorkspaceToFirestore(
+              user.uid,
+              state.tasks,
+              state.moodleCourses,
+              state.settings
+            );
+          } else if (!isEmpty) {
+            state.tasks = cloudTasks;
+            saveLocalState(false);
+            renderAll();
           }
-          const realCloudTasks = cloudTasks.filter((t) => !LEGACY_DEMO_TASK_IDS.has(t.id));
-          state.tasks = realCloudTasks;
-          saveLocalState(false);
-          renderAll();
         },
-        onMoodleCourses: (cloudCourses) => {
-          const realCourses = cloudCourses.filter((c) => !c.id?.startsWith('moodle-'));
-          state.moodleCourses = realCourses;
-          saveLocalState(false);
-          renderAll();
+        onMoodleCourses: (cloudCourses, isEmpty) => {
+          if (!isEmpty) {
+            state.moodleCourses = cloudCourses;
+            saveLocalState(false);
+            renderAll();
+          }
         },
         onSettings: (cloudSettings) => {
           if (cloudSettings) {
@@ -2117,3 +2714,4 @@ function initEvents() {
 loadLocalState();
 initEvents();
 renderAll();
+initServerSync();
