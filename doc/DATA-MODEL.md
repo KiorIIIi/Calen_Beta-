@@ -29,7 +29,7 @@ The `_v2` suffix is a manual schema version marker. There is no migration framew
 /users/{userId}/tasks/{taskId}              -> Task
 /users/{userId}/moodle_courses/{courseId}   -> MoodleCourse
 /users/{userId}/settings/preferences        -> UserSettings
-/test/connection                            -> connectivity probe (read-only)
+/test/connection                            -> connectivity probe (read-only, signed-in users only)
 ```
 
 - `{userId}` is the Firebase Authentication UID.
@@ -52,6 +52,7 @@ Defined in `firebase-blueprint.json` and used throughout `src/app.js`.
 | `priority` | string enum | Yes | `low`, `medium`, `high`, `urgent` |
 | `status` | string enum | Yes | `todo`, `in_progress`, `completed` |
 | `source` | string enum | Yes | `moodle`, `google_classroom`, `google_calendar`, `notion`, `trello`, `personal` |
+| `color` | string enum | No | `auto`, `rose`, `peach`, `butter`, `sage`, `sky`, `lavender`; absent/invalid values render as Auto (source color). Persisted by existing local/workspace/Firestore task serialization; not exported to Google Calendar or iCal. |
 | `course` | string | No | Free-text course or project label |
 | `dueDate` | string | Yes in cloud | ISO 8601 timestamp, max 64 characters |
 | `description` | string | No | Free-text notes |
@@ -127,7 +128,7 @@ Subtasks are embedded in the task document. The UI isolates edits in `state.draf
 | `term` | string | No | Display metadata |
 | `assignments` | Task[] | No | Embedded assignment templates |
 
-The deployed rules only require a valid document ID and a matching `uid` for courses; they do not enforce `code`, `name`, `synced`, or the assignment shape. The blueprint is stricter than the rules.
+The deployed rules require a valid document ID and a matching `uid` for course create/update; deletes are allowed for the owner without the `uid` check (`request.resource` is undefined on delete). They do not enforce `code`, `name`, `synced`, or the assignment shape. The blueprint is stricter than the rules.
 
 ### 5.2 Example course
 
@@ -196,7 +197,7 @@ trello
 }
 ```
 
-The blueprint only declares `uid` and `theme`; `platforms` exists in the implementation and is written to `settings/preferences`. Rules do not validate individual settings fields.
+The blueprint only declares `uid` and `theme`; `platforms` exists in the implementation and is written to `settings/preferences`. Rules do not validate individual settings fields, but they do require the document's `uid` to match the path user.
 
 ## 7. Identifier Conventions
 

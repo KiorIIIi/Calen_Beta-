@@ -1,42 +1,15 @@
-import { initializeApp } from 'firebase/app';
 import {
-  getAuth,
-  GoogleAuthProvider,
-  signInWithPopup,
-  onAuthStateChanged
-} from 'firebase/auth';
-import {
-  getFirestore,
   collection,
   doc,
+  getDocs,
   setDoc,
   deleteDoc,
   onSnapshot,
   getDocFromServer,
   writeBatch
 } from 'firebase/firestore';
-import firebaseConfig from '../firebase-applet-config.json';
-
-const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
-export const auth = getAuth(app);
-
-// Google Login is temporarily disabled for initial launch preparation
-export const GOOGLE_LOGIN_ENABLED = false;
-
-// Google Workspace OAuth Scopes
-export const SCOPES = [
-  'https://www.googleapis.com/auth/calendar.events',
-  'https://www.googleapis.com/auth/classroom.courses.readonly',
-  'https://www.googleapis.com/auth/classroom.coursework.me.readonly'
-];
-
-const provider = new GoogleAuthProvider();
-SCOPES.forEach((scope) => provider.addScope(scope));
-
-// In-memory access token cache (never stored in localStorage or sessionStorage)
-let isSigningIn = false;
-let cachedAccessToken = null;
+import { db, auth } from './firebase-app.js';
+import { getAccessToken, invalidateAccessToken } from './auth/index.js';
 
 export const OperationType = {
   CREATE: 'create',
@@ -68,7 +41,7 @@ export function handleFirestoreError(error, operationType, path) {
     path
   };
   console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
+  throw new Error(errInfo.error || `Firestore ${operationType} failed at ${path}`);
 }
 
 async function testConnection() {
@@ -83,77 +56,7 @@ async function testConnection() {
     }
   }
 }
-if (GOOGLE_LOGIN_ENABLED) {
-  testConnection();
-}
-
-export async function googleSignIn() {
-  if (!GOOGLE_LOGIN_ENABLED) {
-    throw new Error(
-      'Login with Google is currently disabled. Use iCal (.ics) feed sync or paste an in-memory API token below.'
-    );
-  }
-  try {
-    isSigningIn = true;
-    const result = await signInWithPopup(auth, provider);
-    const credential = GoogleAuthProvider.credentialFromResult(result);
-    if (!credential?.accessToken) {
-      throw new Error('Failed to get access token from Firebase Auth');
-    }
-    cachedAccessToken = credential.accessToken;
-    return { user: result.user, accessToken: cachedAccessToken };
-  } catch (error) {
-    console.error('Sign in error:', error);
-    throw error;
-  } finally {
-    isSigningIn = false;
-  }
-}
-
-export const loginWithGoogle = googleSignIn;
-
-export function setInMemoryAccessToken(token) {
-  cachedAccessToken = token ? String(token).trim() : null;
-  return cachedAccessToken;
-}
-
-export async function getAccessToken() {
-  return cachedAccessToken;
-}
-
-export async function logoutUser() {
-  await auth.signOut();
-  cachedAccessToken = null;
-}
-
-export function initAuth(onAuthSuccess, onAuthFailure, onUserChanged) {
-  if (!GOOGLE_LOGIN_ENABLED) {
-    if (onUserChanged) onUserChanged(null);
-    if (onAuthFailure) onAuthFailure(null);
-    return () => {};
-  }
-  return onAuthStateChanged(auth, async (user) => {
-    if (onUserChanged) onUserChanged(user);
-    if (user) {
-      if (cachedAccessToken) {
-        if (onAuthSuccess) onAuthSuccess(user, cachedAccessToken);
-      } else if (!isSigningIn) {
-        cachedAccessToken = null;
-        if (onAuthFailure) onAuthFailure(user);
-      }
-    } else {
-      cachedAccessToken = null;
-      if (onAuthFailure) onAuthFailure(null);
-    }
-  });
-}
-
-export function subscribeAuth(callback) {
-  return initAuth(
-    (user) => callback(user, cachedAccessToken),
-    (user) => callback(user, null)
-  );
-}
+testConnection();
 
 // ============================================================================
 // GOOGLE CALENDAR REST API HELPERS
@@ -186,7 +89,7 @@ export async function fetchGoogleCalendarEvents(daysAhead = 30) {
   );
 
   if (res.status === 401 || res.status === 403) {
-    cachedAccessToken = null;
+    invalidateAccessToken();
     throw new Error('NEEDS_AUTH');
   }
 
@@ -232,7 +135,7 @@ export async function upsertGoogleCalendarEvent(task) {
   });
 
   if (res.status === 401 || res.status === 403) {
-    cachedAccessToken = null;
+    invalidateAccessToken();
     throw new Error('NEEDS_AUTH');
   }
 
@@ -280,7 +183,7 @@ export async function deleteGoogleCalendarEvent(gcalEventId) {
   );
 
   if (res.status === 401 || res.status === 403) {
-    cachedAccessToken = null;
+    invalidateAccessToken();
     throw new Error('NEEDS_AUTH');
   }
 
@@ -333,6 +236,7 @@ export function subscribeUserWorkspace(uid, { onTasks, onMoodleCourses, onSettin
 export async function saveTaskToFirestore(uid, task) {
   const path = `users/${uid}/tasks/${task.id}`;
   try {
+    // Preserve optional task.color together with the other task fields.
     const payload = { ...task, uid };
     Object.keys(payload).forEach((k) => {
       if (payload[k] === undefined) delete payload[k];
@@ -355,11 +259,26 @@ export async function deleteTaskFromFirestore(uid, taskId) {
 export async function saveMoodleCoursesToFirestore(uid, courses) {
   const basePath = `users/${uid}/moodle_courses`;
   try {
-    const batch = writeBatch(db);
-    courses.forEach((c) => {
-      batch.set(doc(db, basePath, c.id), { ...c, uid });
-    });
-    await batch.commit();
+    const courseIds = new Set(courses.map((c) => c.id));
+    // Remove cloud docs for courses the user deleted locally so the empty /
+    // trimmed course list is mirrored in Firestore instead of growing stale.
+    const existing = await getDocs(collection(db, basePath));
+    const staleIds = existing.docs.map((d) => d.id).filter((id) => !courseIds.has(id));
+    const chunkSize = 450;
+    for (let i = 0; i < courses.length; i += chunkSize) {
+      const batch = writeBatch(db);
+      courses.slice(i, i + chunkSize).forEach((c) => {
+        batch.set(doc(db, basePath, c.id), { ...c, uid });
+      });
+      await batch.commit();
+    }
+    for (let i = 0; i < staleIds.length; i += chunkSize) {
+      const batch = writeBatch(db);
+      staleIds.slice(i, i + chunkSize).forEach((id) => {
+        batch.delete(doc(db, basePath, id));
+      });
+      await batch.commit();
+    }
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, basePath);
   }
@@ -376,21 +295,25 @@ export async function saveSettingsToFirestore(uid, settings) {
 
 export async function seedWorkspaceToFirestore(uid, tasks, courses, settings) {
   try {
-    const batch = writeBatch(db);
-    tasks.forEach((t) => {
-      const clean = { ...t, uid };
-      Object.keys(clean).forEach((k) => {
-        if (clean[k] === undefined) delete clean[k];
+    const chunkSize = 450; // Firestore batches cap at 500 writes
+    const items = [
+      ...tasks.map((t) => ({ path: `users/${uid}/tasks`, id: t.id, data: t })),
+      ...courses.map((c) => ({ path: basePathOrCourses(uid), id: c.id, data: c })),
+    ];
+    for (let i = 0; i < items.length; i += chunkSize) {
+      const batch = writeBatch(db);
+      items.slice(i, i + chunkSize).forEach(({ path, id, data }) => {
+        const clean = { ...data, uid };
+        Object.keys(clean).forEach((k) => {
+          if (clean[k] === undefined) delete clean[k];
+        });
+        batch.set(doc(db, path, id), clean);
       });
-      batch.set(doc(db, `users/${uid}/tasks`, t.id), clean);
-    });
-    courses.forEach((c) => {
-      batch.set(doc(db, basePathOrCourses(uid), c.id), { ...c, uid });
-    });
-    if (settings) {
-      batch.set(doc(db, `users/${uid}/settings/preferences`), { ...settings, uid });
+      await batch.commit();
     }
-    await batch.commit();
+    if (settings) {
+      await setDoc(doc(db, `users/${uid}/settings/preferences`), { ...settings, uid });
+    }
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, `users/${uid}`);
   }

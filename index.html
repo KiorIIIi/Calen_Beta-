@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
     <title>Calen - Notion-Inspired Unified Calendar & Task Hub</title>
     <meta
       name="description"
@@ -171,14 +171,14 @@
           <div>
             <div class="page-title-row">
               <h1 id="cal-title" class="page-title">October 2026</h1>
-              <button type="button" id="cal-today-btn" class="hdr-btn" style="height:32px;font-size:12.5px;">
+              <button type="button" id="cal-today-btn" class="hdr-btn">
                 Today
               </button>
               <div style="display:inline-flex;gap:4px;">
-                <button type="button" id="cal-prev-btn" class="hdr-btn hdr-btn-icon" style="width:32px;height:32px;" aria-label="Previous">
+                <button type="button" id="cal-prev-btn" class="hdr-btn hdr-btn-icon" aria-label="Previous">
                   ‹
                 </button>
-                <button type="button" id="cal-next-btn" class="hdr-btn hdr-btn-icon" style="width:32px;height:32px;" aria-label="Next">
+                <button type="button" id="cal-next-btn" class="hdr-btn hdr-btn-icon" aria-label="Next">
                   ›
                 </button>
               </div>
@@ -266,6 +266,20 @@
             </div>
           </div>
 
+          <fieldset class="task-color-fieldset">
+            <legend class="form-label">Event &amp; reminder color</legend>
+            <div class="task-color-options">
+              <label class="task-color-option"><input type="radio" name="task-color" value="auto" checked /><span class="task-color-swatch color-auto" aria-hidden="true"></span><span>Auto</span></label>
+              <label class="task-color-option"><input type="radio" name="task-color" value="rose" /><span class="task-color-swatch badge-rose" aria-hidden="true"></span><span>Rose</span></label>
+              <label class="task-color-option"><input type="radio" name="task-color" value="peach" /><span class="task-color-swatch badge-peach" aria-hidden="true"></span><span>Peach</span></label>
+              <label class="task-color-option"><input type="radio" name="task-color" value="butter" /><span class="task-color-swatch badge-butter" aria-hidden="true"></span><span>Yellow</span></label>
+              <label class="task-color-option"><input type="radio" name="task-color" value="sage" /><span class="task-color-swatch badge-sage" aria-hidden="true"></span><span>Green</span></label>
+              <label class="task-color-option"><input type="radio" name="task-color" value="sky" /><span class="task-color-swatch badge-sky" aria-hidden="true"></span><span>Blue</span></label>
+              <label class="task-color-option"><input type="radio" name="task-color" value="lavender" /><span class="task-color-swatch badge-lavender" aria-hidden="true"></span><span>Lavender</span></label>
+            </div>
+            <p class="task-color-help">Auto uses the source color. Your choice appears on this calendar event and its reminder.</p>
+          </fieldset>
+
           <div class="form-group">
             <label class="form-label" for="task-desc">Notes &amp; Instructions</label>
             <textarea id="task-desc" class="input-field" style="height:80px;padding:8px 12px;resize:vertical;" placeholder="Add lecture links, rubric notes, or submission details..."></textarea>
@@ -316,9 +330,9 @@
             <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-top:4px;">
               <div>
                 <div id="sync-cloud-title" style="font-weight:600;font-size:14px;">Local Server &amp; HTTPS Tunnel Sync Active</div>
-                <div id="sync-cloud-subtitle" style="font-size:12.5px;color:var(--text-secondary);">Synced seamlessly between localhost, HTTPS tunnel, and offline device cache. Google Login is disabled for now.</div>
+                <div id="sync-cloud-subtitle" style="font-size:12.5px;color:var(--text-secondary);">Sign in with Google to sync tasks across devices and connect Google Calendar.</div>
               </div>
-              <button type="button" id="btn-modal-cloud-login" class="gsi-material-button" disabled aria-disabled="true" title="Login with Google is disabled for now" style="opacity:0.55;cursor:not-allowed;">
+              <button type="button" id="btn-modal-cloud-login" class="gsi-material-button" aria-disabled="false" title="Sign in with Google">
                 <div class="gsi-material-button-state"></div>
                 <div class="gsi-material-button-content-wrapper">
                   <div class="gsi-material-button-icon">
@@ -330,7 +344,7 @@
                       <path fill="none" d="M0 0h48v48H0z"></path>
                     </svg>
                   </div>
-                  <span id="modal-cloud-login-text" class="gsi-material-button-contents">Google Login (Unavailable)</span>
+                  <span id="modal-cloud-login-text" class="gsi-material-button-contents">Sign in with Google</span>
                 </div>
               </button>
             </div>
@@ -504,10 +518,10 @@
           <!-- Google Auth Header Row (Disabled for now) -->
           <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;padding-bottom:12px;border-bottom:1px solid var(--border-color);flex-wrap:wrap;">
             <div>
-              <div id="gcal-auth-status-title" style="font-weight:600;font-size:14px;">Google Sign-In Disabled for Now</div>
-              <div id="gcal-auth-status-desc" style="font-size:12.5px;color:var(--text-secondary);">Use iCal (.ics) URL sync &amp; phone calendar subscription below, or paste an API token</div>
+              <div id="gcal-auth-status-title" style="font-weight:600;font-size:14px;">Connect Google Calendar</div>
+              <div id="gcal-auth-status-desc" style="font-size:12.5px;color:var(--text-secondary);">Sign in with Google to authorize Calendar event sync</div>
             </div>
-            <button type="button" id="btn-gcal-google-signin" class="gsi-material-button" disabled aria-disabled="true" title="Login with Google is disabled for now" style="opacity:0.55;cursor:not-allowed;">
+            <button type="button" id="btn-gcal-google-signin" class="gsi-material-button" aria-disabled="false" title="Sign in with Google">
               <div class="gsi-material-button-state"></div>
               <div class="gsi-material-button-content-wrapper">
                 <div class="gsi-material-button-icon">
@@ -519,7 +533,7 @@
                     <path fill="none" d="M0 0h48v48H0z"></path>
                   </svg>
                 </div>
-                <span id="gcal-signin-btn-text" class="gsi-material-button-contents">Google Login (Unavailable)</span>
+                <span id="gcal-signin-btn-text" class="gsi-material-button-contents">Sign in with Google</span>
               </div>
             </button>
           </div>

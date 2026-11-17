@@ -9,7 +9,7 @@
     "build": "vite build",
     "preview": "vite preview --port=3000 --host=0.0.0.0",
     "clean": "rm -rf dist server.js",
-    "lint": "node --check src/app.js && node --check src/firebase.js"
+    "lint": "node --check src/app.js && node --check src/firebase.js && node --check src/firebase-app.js && node --check src/api.js && node --check vite.config.js && node --check src/auth/index.js && node --check src/auth/session.js && node --check src/auth/config.js && node --check src/auth/scopes.js && node --check src/auth/connectors/firebase.js && node --check src/auth/connectors/google-gis.js"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

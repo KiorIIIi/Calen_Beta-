@@ -100,3 +100,11 @@ Log dated entries here when you make non-trivial decisions, discover facts, or l
 
 ### 2026-10-30
 - User authorized development-to-main integration and selected the current development workflow over main's older onboarding flow. Resolved four core files consistently; no runtime data reset or v3-to-v2 browser migration. See `doc/MERGE-REVIEW-2026-10-30.md` for findings, checks, and boundaries.
+
+### 2026-11-16
+- Refined existing CALEN UI: shared controls, sidebar spacing, calendar readability/focus states, keyboard event buttons, solid dialogs, and responsive touch sizing. No database, API, or business-logic changes. Reference video was not attached; used the written brief and existing brand.
+- Lint and build passed (bundle-size warning remains). Isolated Chromium checks at 1440, 900, and 390px passed for navigation, month/week, keyboard event opening, task dialogs, Escape, and page overflow; reviewed light/dark captures. Actual phone and live integration testing were not performed.
+- Design detector warnings for existing fonts/palette were intentionally retained for brand continuity; calendar outer padding is intentionally zero because individual grid cells supply padding. Narrow calendars retain horizontal scrolling for readable events.
+
+### 2026-11-16 — Assignment colors
+- Added optional task.color with an Auto/source default and six theme-aware choices in the assignment editor; calendar events and reminder banners use the choice. Existing task serialization carries the field. Updated optional Firestore validation/schema and data-model docs; no rule deployment performed.

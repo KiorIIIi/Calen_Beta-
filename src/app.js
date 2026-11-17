@@ -1,11 +1,17 @@
 import { dayKey, groupByDeadline } from './deadlines.js';
+import { apiUrl } from './api.js';
 import {
-  GOOGLE_LOGIN_ENABLED,
-  googleSignIn,
-  getAccessToken,
-  setInMemoryAccessToken,
-  logoutUser,
   subscribeAuth,
+  signIn,
+  signOut,
+  getSession,
+  getAccessToken,
+  hasAccessToken,
+  ensureAccessToken,
+  setManualAccessToken,
+  getAuthProviders
+} from './auth/index.js';
+import {
   subscribeUserWorkspace,
   saveTaskToFirestore,
   deleteTaskFromFirestore,
@@ -24,6 +30,17 @@ const STORAGE_KEYS = {
   SETTINGS: 'calen_html_settings_v2',
   UPDATED_AT: 'calen_html_updated_at_v2'
 };
+
+const TASK_COLORS = ['rose', 'peach', 'butter', 'sage', 'sky', 'lavender'];
+function normalizeTaskColor(color) {
+  return TASK_COLORS.includes(color) ? color : 'auto';
+}
+function setTaskColorPicker(color) {
+  const value = normalizeTaskColor(color);
+  document.querySelectorAll('input[name="task-color"]').forEach((input) => {
+    input.checked = input.value === value;
+  });
+}
 
 const CLIENT_ID = `client-${Math.random().toString(36).slice(2, 10)}`;
 
@@ -296,6 +313,11 @@ const state = {
   editingTaskId: null,
   draftSubtasks: [],
   user: null,
+  // Sign-in session snapshot, mirrored from src/auth so rendering stays
+  // synchronous. `user` is the Firebase identity only (Firestore sync);
+  // Google Calendar tokens ride along in hasGcalToken.
+  auth: { status: 'signed-out', error: null, available: false, email: '', provider: null },
+  firestoreUid: null,
   hasGcalToken: false,
   serverOnline: false,
   updatedAt: 0,
@@ -370,7 +392,7 @@ function loadLocalState() {
 
 async function pushWorkspaceToServer() {
   try {
-    const res = await fetch('/api/workspace', {
+    const res = await fetch(apiUrl('/api/workspace'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -394,7 +416,7 @@ async function pushWorkspaceToServer() {
 
 async function pullWorkspaceFromServer() {
   try {
-    const res = await fetch('/api/workspace', { cache: 'no-store' });
+    const res = await fetch(apiUrl('/api/workspace'), { cache: 'no-store' });
     if (!res.ok) return;
     const data = await res.json();
     state.serverOnline = true;
@@ -441,7 +463,7 @@ function initServerSync() {
     let es = null;
     const connectSse = () => {
       try {
-        es = new EventSource('/api/events');
+        es = new EventSource(apiUrl('/api/events'));
         es.onopen = () => {
           state.serverOnline = true;
           renderWorkspaceShell();
@@ -760,27 +782,46 @@ function renderSettingsSyncStatus() {
   const modalCloudText = document.getElementById('modal-cloud-login-text');
   const syncSub = document.getElementById('sync-cloud-subtitle');
   const cloudBtn = document.getElementById('btn-modal-cloud-login');
-  if (!GOOGLE_LOGIN_ENABLED) {
-    if (cloudBtn) {
-      cloudBtn.disabled = true;
-      cloudBtn.setAttribute('aria-disabled', 'true');
-    }
-    if (modalCloudText) modalCloudText.textContent = 'Google Login (Unavailable)';
-    if (syncSub) {
-      syncSub.textContent = state.serverOnline
-        ? 'Connected to Local Server DB — localhost, HTTPS tunnel, and offline cache are synced seamlessly.'
-        : 'Offline Cache Active — viewing saved calendar data on this device. Will sync when server is reachable.';
-    }
-  } else if (state.user) {
-    if (modalCloudText) modalCloudText.textContent = 'Sign out of Google';
-    if (syncSub)
-      syncSub.textContent = `Signed in as ${state.user.email} — live Firestore sync active`;
-  } else {
-    if (modalCloudText) modalCloudText.textContent = 'Sign in with Google';
-    if (syncSub)
-      syncSub.textContent =
-        'Sign in with Google to sync tasks across devices and connect Google Calendar';
+  const { label, disabled } = cloudAccountButtonState();
+  if (modalCloudText) modalCloudText.textContent = label;
+  if (cloudBtn) {
+    cloudBtn.disabled = disabled;
+    cloudBtn.setAttribute('aria-disabled', String(disabled));
+    cloudBtn.style.opacity = disabled ? '0.55' : '1';
+    cloudBtn.style.cursor = disabled ? 'not-allowed' : 'pointer';
+    cloudBtn.title = disabled ? 'No Google sign-in connector is configured.' : label;
   }
+  if (syncSub) syncSub.textContent = cloudAccountSubtitle();
+}
+
+// Sign-in is only as available as the connectors this deployment configured.
+function cloudAccountButtonState() {
+  const configured = getAuthProviders().some((provider) => provider.available);
+  if (state.auth.status === 'authenticating') return { label: 'Connecting…', disabled: true };
+  if (state.user || state.hasGcalToken) return { label: 'Sign out of Google', disabled: false };
+  if (!configured) return { label: 'Google Login (Unavailable)', disabled: true };
+  return { label: state.auth.status === 'needs-reauth' ? 'Reconnect Google' : 'Sign in with Google', disabled: false };
+}
+
+function cloudAccountSubtitle() {
+  if (state.auth.status === 'authenticating') return 'Waiting for Google to authorize Calen…';
+  if (state.user) return `Signed in as ${state.user.email} — live Firestore sync active`;
+  if (state.hasGcalToken) {
+    const who = state.auth.email ? ` as ${state.auth.email}` : '';
+    return `Google Calendar connected${who} — access token stays in memory for this tab only`;
+  }
+  if (state.auth.status === 'error' && state.auth.error?.message) return state.auth.error.message;
+  if (state.auth.status === 'needs-reauth') {
+    return 'Your Google session expired. Reconnect to resume Calendar sync.';
+  }
+  if (!getAuthProviders().some((provider) => provider.available)) {
+    return state.serverOnline
+      ? 'Local server sync active. Google sign-in is not configured for this deployment.'
+      : 'Offline cache active. Google sign-in is not configured for this deployment.';
+  }
+  return state.serverOnline
+    ? 'Sign in with Google to sync tasks across devices and connect Google Calendar.'
+    : 'Offline cache active. Sign in with Google to sync across devices.';
 }
 
 function renderReminderBanner() {
@@ -804,6 +845,7 @@ function renderReminderBanner() {
   }
 
   const topTask = pendingUrgent[0];
+  banner.dataset.color = normalizeTaskColor(topTask.color);
   const dueInfo = formatDueDate(topTask.dueDate);
   banner.classList.remove('hidden');
   textEl.innerHTML = `<strong>${
@@ -1240,6 +1282,7 @@ function renderCalendarSection() {
   const now = new Date();
   const visibleTasks = getVisibleTasks();
 
+  grid.dataset.mode = state.calMode;
   grid.innerHTML = cells
     .map(({ date, outside }) => {
       const isToday =
@@ -1272,13 +1315,13 @@ function renderCalendarSection() {
               const src = SOURCE_META[task.source] || SOURCE_META.personal;
               const prio = PRIORITY_META[task.priority] || PRIORITY_META.medium;
               return `
-                <div class="cal-event-chip ${src.badgeClass}" data-event-id="${escapeHtml(
+                <button type="button" class="cal-event-chip ${normalizeTaskColor(task.color) === 'auto' ? src.badgeClass : `badge-${normalizeTaskColor(task.color)}`}" data-event-id="${escapeHtml(
                   task.id
                 )}" title="${escapeHtml(task.title)} (${prio.label})">
                   <span style="overflow:hidden;text-overflow:ellipsis;">${escapeHtml(
                     task.title
                   )}</span>
-                </div>
+                </button>
               `;
             })
             .join('')}
@@ -1389,31 +1432,30 @@ function showGcalFeedback(msg, isError = false) {
 }
 
 async function ensureGoogleCalendarToken() {
-  const token = await getAccessToken();
-  if (token) {
+  if (hasAccessToken()) {
     state.hasGcalToken = true;
-    return token;
+    return getAccessToken();
   }
   const manualInput = document.getElementById('gcal-manual-token')?.value?.trim();
   if (manualInput) {
-    setInMemoryAccessToken(manualInput);
+    setManualAccessToken(manualInput);
     state.hasGcalToken = true;
     renderAll();
     return manualInput;
   }
-  if (!GOOGLE_LOGIN_ENABLED) {
-    throw new Error(
-      'Google Sign-In is disabled for now. Use "Sync iCal Feed" / "Download .ics" above, or paste a Google Calendar OAuth token in the token field.'
-    );
-  }
-  const res = await googleSignIn();
-  if (res?.accessToken) {
-    state.user = res.user;
+  try {
+    const token = await ensureAccessToken({ interactive: true });
     state.hasGcalToken = true;
     renderAll();
-    return res.accessToken;
+    return token;
+  } catch (err) {
+    if (err?.code === 'NEEDS_AUTH' || err?.message === 'NEEDS_AUTH') {
+      throw new Error(
+        'No Google authorization yet. Sign in with Google above, sync an iCal (.ics) feed, or paste a Calendar OAuth token.'
+      );
+    }
+    throw err;
   }
-  throw new Error('Google Calendar authorization was cancelled.');
 }
 
 function renderGcalModalContent() {
@@ -1425,7 +1467,7 @@ function renderGcalModalContent() {
   const icalUrlInput = document.getElementById('gcal-ical-url');
 
   if (exportUrlInput) {
-    exportUrlInput.value = `${window.location.origin}/api/calendar.ics`;
+    exportUrlInput.value = apiUrl(`${window.location.origin}/api/calendar.ics`);
   }
   if (icalUrlInput && !icalUrlInput.value && state.settings.gcalIcalUrl) {
     icalUrlInput.value = state.settings.gcalIcalUrl;
@@ -1433,22 +1475,40 @@ function renderGcalModalContent() {
 
   if (!titleEl || !descEl || !btnTextEl || !listEl) return;
 
-  if (!GOOGLE_LOGIN_ENABLED) {
-    titleEl.textContent = state.hasGcalToken
-      ? 'Google Calendar API Token Active'
-      : 'Google Sign-In Disabled for Now';
-    descEl.textContent = state.hasGcalToken
-      ? 'In-memory OAuth token loaded — ready for two-way API sync'
-      : 'Use iCal (.ics) URL sync & phone calendar subscription below, or paste an API token';
-    btnTextEl.textContent = 'Google Login (Unavailable)';
-  } else if (state.user && state.hasGcalToken) {
+  const connectorAvailable = getAuthProviders().some((provider) => provider.available);
+  const busy = state.auth.status === 'authenticating';
+
+  if (state.hasGcalToken) {
     titleEl.textContent = 'Google Calendar Connected';
-    descEl.textContent = `Authorized as ${state.user.email} — ready for two-way event sync`;
+    descEl.textContent = state.auth.email
+      ? `Authorized as ${state.auth.email} — ready for two-way event sync`
+      : 'In-memory OAuth token loaded — ready for two-way API sync';
+    btnTextEl.textContent = 'Reconnect Google';
+  } else if (busy) {
+    titleEl.textContent = 'Waiting for Google…';
+    descEl.textContent = 'Complete the Google prompt to authorize Calendar access.';
+    btnTextEl.textContent = 'Connecting…';
+  } else if (!connectorAvailable) {
+    titleEl.textContent = 'Google Sign-In Unavailable';
+    descEl.textContent = 'Use iCal (.ics) URL sync below, or paste a Calendar OAuth token.';
+    btnTextEl.textContent = 'Google Login (Unavailable)';
+  } else if (state.auth.status === 'needs-reauth') {
+    titleEl.textContent = 'Reconnect Google Calendar';
+    descEl.textContent = 'Your Google session expired — reconnect to resume two-way sync.';
     btnTextEl.textContent = 'Reconnect Google';
   } else {
     titleEl.textContent = 'Connect Google Calendar';
     descEl.textContent = 'Sign in with Google to authorize Calendar event sync';
     btnTextEl.textContent = 'Sign in with Google';
+  }
+
+  const signInBtn = document.getElementById('btn-gcal-google-signin');
+  if (signInBtn) {
+    const signInDisabled = !connectorAvailable || busy;
+    signInBtn.disabled = signInDisabled;
+    signInBtn.setAttribute('aria-disabled', String(signInDisabled));
+    signInBtn.style.opacity = signInDisabled ? '0.55' : '1';
+    signInBtn.style.cursor = signInDisabled ? 'not-allowed' : 'pointer';
   }
 
   const syncedTasks = state.tasks.filter(
@@ -1504,7 +1564,7 @@ function renderGcalModalContent() {
         confirmLabel: 'Remove Event',
         onConfirm: async () => {
           try {
-            const token = await getAccessToken();
+            const token = getAccessToken();
             if (token && task.gcalEventId) {
               await deleteGoogleCalendarEvent(task.gcalEventId);
             }
@@ -1543,7 +1603,7 @@ async function handleGcalIcalUrlSync() {
   }
   try {
     showGcalFeedback('Fetching Google Calendar iCal (.ics) feed via local server...');
-    const res = await fetch('/api/proxy/ical', {
+    const res = await fetch(apiUrl('/api/proxy/ical'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url })
@@ -1709,6 +1769,7 @@ function openNewTaskModal(prefillDateStr = null) {
   document.getElementById('task-priority').value = 'medium';
   document.getElementById('task-status').value = 'todo';
   document.getElementById('task-source').value = 'personal';
+  setTaskColorPicker('auto');
   document.getElementById('task-course').value = '';
   document.getElementById('task-desc').value = '';
 
@@ -1738,6 +1799,7 @@ function openTaskModal(taskId) {
   document.getElementById('task-priority').value = task.priority;
   document.getElementById('task-status').value = task.status;
   document.getElementById('task-source').value = task.source;
+  setTaskColorPicker(task.color);
   document.getElementById('task-course').value = task.course || '';
   document.getElementById('task-desc').value = task.description || '';
 
@@ -1875,7 +1937,7 @@ async function handleFetchMoodleApi() {
 
   try {
     showFeedbackBox('moodle-feedback-box', 'Connecting to Moodle REST API via local server...');
-    const res = await fetch('/api/proxy/moodle', {
+    const res = await fetch(apiUrl('/api/proxy/moodle'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ moodleUrl, token })
@@ -1908,7 +1970,7 @@ async function handleFetchMoodleIcalUrl() {
   }
   try {
     showFeedbackBox('moodle-feedback-box', 'Fetching Moodle iCal (.ics) feed via local server...');
-    const res = await fetch('/api/proxy/ical', {
+    const res = await fetch(apiUrl('/api/proxy/ical'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url })
@@ -2030,7 +2092,7 @@ async function handleClassroomIcalSync() {
   }
   try {
     showFeedbackBox('classroom-feedback-box', 'Fetching Google Classroom iCal feed...');
-    const res = await fetch('/api/proxy/ical', {
+    const res = await fetch(apiUrl('/api/proxy/ical'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url })
@@ -2065,7 +2127,7 @@ async function handleFetchClassroomApi() {
   }
   try {
     showFeedbackBox('classroom-feedback-box', 'Fetching courses & coursework from Google Classroom API...');
-    const res = await fetch('/api/proxy/classroom', {
+    const res = await fetch(apiUrl('/api/proxy/classroom'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ accessToken })
@@ -2353,22 +2415,17 @@ function initEvents() {
   });
 
   const handleCloudAuthClick = async () => {
-    if (!GOOGLE_LOGIN_ENABLED) return;
     try {
-      if (state.user) {
-        await logoutUser();
-        state.hasGcalToken = false;
-        renderAll();
+      if (getSession().status === 'authenticating') return;
+      if (state.user || state.hasGcalToken) {
+        await signOut();
       } else {
-        const res = await googleSignIn();
-        if (res?.accessToken) {
-          state.hasGcalToken = true;
-          renderAll();
-        }
+        await signIn();
       }
     } catch (err) {
       console.error('Authentication action failed:', err);
     }
+    renderAll();
   };
   document.getElementById('btn-modal-cloud-login').addEventListener('click', handleCloudAuthClick);
 
@@ -2379,14 +2436,13 @@ function initEvents() {
     document.getElementById('modal-gcal').classList.add('hidden');
   });
   document.getElementById('btn-gcal-google-signin').addEventListener('click', async () => {
-    if (!GOOGLE_LOGIN_ENABLED) return;
     try {
-      const res = await googleSignIn();
-      if (res?.accessToken) {
-        state.user = res.user;
-        state.hasGcalToken = true;
+      const session = await signIn();
+      if (session.token) {
         renderAll();
         showGcalFeedback('Connected to Google Calendar! You can now import or push events.');
+      } else if (session.error?.message) {
+        showGcalFeedback(session.error.message, true);
       }
     } catch (err) {
       showGcalFeedback(err.message || 'Google Sign-In failed.', true);
@@ -2402,13 +2458,13 @@ function initEvents() {
   document.getElementById('btn-gcal-save-token').addEventListener('click', () => {
     const token = document.getElementById('gcal-manual-token')?.value?.trim();
     if (!token) {
-      setInMemoryAccessToken(null);
+      setManualAccessToken(null);
       state.hasGcalToken = false;
       renderAll();
       showGcalFeedback('Cleared in-memory Google Calendar API token.');
       return;
     }
-    setInMemoryAccessToken(token);
+    setManualAccessToken(token);
     state.hasGcalToken = true;
     renderAll();
     showGcalFeedback('In-memory Google Calendar API token set! You can now use Import/Push via API.');
@@ -2539,6 +2595,7 @@ function initEvents() {
       priority: document.getElementById('task-priority').value,
       status: document.getElementById('task-status').value,
       source: document.getElementById('task-source').value,
+      color: normalizeTaskColor(document.querySelector('input[name="task-color"]:checked')?.value),
       course: document.getElementById('task-course').value.trim(),
       dueDate: dueIso,
       description: document.getElementById('task-desc').value.trim(),
@@ -2667,20 +2724,31 @@ function initEvents() {
     };
   }
 
-  subscribeAuth((user, token) => {
-    state.user = user;
-    state.hasGcalToken = Boolean(token);
-    if (state.unsubFirestore) {
-      state.unsubFirestore();
-      state.unsubFirestore = null;
-    }
+  subscribeAuth((session) => {
+    // `cloudUser` is the Firebase identity that Firestore rules authorise;
+    // a Google Calendar-only session has a token but no cloud identity.
+    const cloudUser = session.cloudUser;
+    state.auth = {
+      status: session.status,
+      error: session.error,
+      email: session.user?.email || '',
+      provider: session.provider,
+      available: getAuthProviders().some((provider) => provider.available)
+    };
+    state.user = cloudUser || null;
+    state.hasGcalToken = Boolean(session.token);
 
-    if (user) {
-      state.unsubFirestore = subscribeUserWorkspace(user.uid, {
+    if (cloudUser && state.firestoreUid !== cloudUser.uid) {
+      if (state.unsubFirestore) {
+        state.unsubFirestore();
+        state.unsubFirestore = null;
+      }
+      state.firestoreUid = cloudUser.uid;
+      state.unsubFirestore = subscribeUserWorkspace(cloudUser.uid, {
         onTasks: async (cloudTasks, isEmpty) => {
           if (isEmpty && state.tasks.length > 0) {
             await seedWorkspaceToFirestore(
-              user.uid,
+              cloudUser.uid,
               state.tasks,
               state.moodleCourses,
               state.settings
@@ -2706,7 +2774,12 @@ function initEvents() {
           }
         }
       });
+    } else if (!cloudUser && state.firestoreUid) {
+      if (state.unsubFirestore) state.unsubFirestore();
+      state.unsubFirestore = null;
+      state.firestoreUid = null;
     }
+
     renderAll();
   });
 }

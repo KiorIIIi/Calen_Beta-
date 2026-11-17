@@ -24,11 +24,13 @@ service cloud.firestore {
         && data.source is string && data.source in ['google_classroom', 'classroom', 'google_calendar', 'moodle', 'notion', 'trello', 'personal']
         && data.status is string && data.status in ['todo', 'in_progress', 'completed']
         && data.priority is string && data.priority in ['low', 'medium', 'high', 'urgent']
+        && (!('color' in data) || data.color in ['auto', 'rose', 'peach', 'butter', 'sage', 'sky', 'lavender'])
         && data.uid == userId;
     }
 
     match /test/{docId} {
-      allow read: if true;
+      // Connectivity probe only; must not be world-readable.
+      allow read: if isSignedIn();
       allow write: if false;
     }
 
@@ -42,12 +44,20 @@ service cloud.firestore {
 
     match /users/{userId}/moodle_courses/{courseId} {
       allow read: if isOwner(userId);
-      allow write: if isOwner(userId) && isValidId(courseId) && request.resource.data.uid == userId;
+      // request.resource is undefined on delete, so deletes need their own rule
+      // (previously every delete was silently denied by the uid check).
+      allow create, update: if isOwner(userId) && isValidId(courseId)
+        && request.resource.data.uid == userId;
+      allow delete: if isOwner(userId) && isValidId(courseId);
     }
 
     match /users/{userId}/settings/{docId} {
       allow read: if isOwner(userId);
-      allow write: if isOwner(userId) && isValidId(docId);
+      // Both write paths (saveSettingsToFirestore, seedWorkspaceToFirestore)
+      // stamp uid into the document; enforce it server-side too.
+      allow create, update: if isOwner(userId) && isValidId(docId)
+        && request.resource.data.uid == userId;
+      allow delete: if isOwner(userId) && isValidId(docId);
     }
   }
 }

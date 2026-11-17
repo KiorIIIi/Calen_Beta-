@@ -14,6 +14,7 @@
           "type": "string",
           "enum": ["moodle", "google_classroom", "google_calendar", "notion", "trello", "personal"]
         },
+        "color": { "type": "string", "enum": ["auto", "rose", "peach", "butter", "sage", "sky", "lavender"] },
         "course": { "type": "string" },
         "dueDate": { "type": "string" },
         "description": { "type": "string" },

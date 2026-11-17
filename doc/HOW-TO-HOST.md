@@ -48,6 +48,21 @@ Now, **Calen** uses a **3-Layer Hybrid Sync Architecture** built into [`vite.con
    - Your server hosts a live iCalendar feed at `https://<your-tunnel>/api/calendar.ics` (and a **Download `.ics`** button inside the Google Calendar modal).
    - You can add this URL to **Google Calendar** (*Settings → Add calendar → From URL*) or **Apple Calendar / Outlook** on your phone so your deadlines live natively inside your phone's calendar app 24/7.
 
+### Optional: locking the shared workspace API behind a token
+
+By default the `/api/*` endpoints are open, matching the "one shared laptop database" design above. If your tunnel is exposed to people you do not trust, start the server with a shared token:
+
+```powershell
+$env:CALEN_WORKSPACE_TOKEN = "a-long-random-string"; npm run dev
+```
+
+When the token is set, every `/api/*` endpoint (workspace, SSE, iCal feed, proxies) returns `401` unless the request carries the token. The app picks it up automatically: open your tunnel or localhost URL **once** with `?token=a-long-random-string` appended — the app remembers it for the browser session (via `sessionStorage`) and attaches it to every API request, including the exported `.ics` subscription URL. The token can also be sent as an `Authorization: Bearer <token>` header for API clients.
+
+Two more optional server-side switches:
+
+- `CALEN_ALLOW_PRIVATE_UPSTREAMS=true` — permits the Moodle/iCal proxies to fetch `http://192.168.x.x`-style LAN addresses (needed only for genuinely self-hosted Moodle instances on your local network; the proxies otherwise refuse private/loopback hosts to prevent Server-Side Request Forgery).
+- All upstream proxy fetches time out after 15 seconds regardless.
+
 ---
 
 ## 3. Syncing Moodle, Google Classroom, & Google Calendar (Without Google Login)
