@@ -27,8 +27,7 @@ function fallbackConfig() {
       ? ['google-gis']
       : [...DEFAULT_CONNECTOR_ORDER],
     verifyPath: '/api/auth/google/verify',
-    signOutPath: '/api/auth/signout',
-    connectorsAvailable: true
+    signOutPath: '/api/auth/signout'
   };
 }
 
@@ -51,8 +50,7 @@ function normalizeProviders(payload) {
         : [...DEFAULT_GOOGLE_SCOPES],
     connectors: connectors.length ? connectors : [...DEFAULT_CONNECTOR_ORDER],
     verifyPath: google.verifyPath || '/api/auth/google/verify',
-    signOutPath: google.signOutPath || '/api/auth/signout',
-    connectorsAvailable: google.enabled !== false
+    signOutPath: google.signOutPath || '/api/auth/signout'
   };
 }
 

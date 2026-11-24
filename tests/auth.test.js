@@ -110,7 +110,7 @@ test('losing a token with no identity returns to signed out', () => {
   assert.equal(expired.status, 'signed-out');
 });
 
-test('failure clears the token and records a reason', () => {
+test('a cancelled retry keeps a token that is still valid', () => {
   const signedIn = reduceSession(fresh(), {
     type: 'success',
     provider: 'google-gis',
@@ -125,9 +125,22 @@ test('failure clears the token and records a reason', () => {
   });
 
   assert.equal(failed.status, 'error');
-  assert.equal(failed.token, null);
+  assert.equal(failed.token, 'token');
+  assert.equal(failed.expiresAt, NOW + 3600_000);
   assert.equal(failed.error.code, 'cancelled');
   assert.equal(describeSession(failed), 'Google sign-in was cancelled.');
+  assert.equal(isTokenFresh(failed, NOW + 1000), true);
+});
+
+test('a failed sign-in from signed out leaves no token', () => {
+  const failed = reduceSession(fresh(), {
+    type: 'failure',
+    error: { code: 'cancelled', message: 'Google sign-in was cancelled.' },
+    now: NOW
+  });
+  assert.equal(failed.status, 'error');
+  assert.equal(failed.token, null);
+  assert.equal(failed.expiresAt, 0);
 });
 
 test('dismissing an error restores the previous sign-in posture', () => {
@@ -147,10 +160,11 @@ test('dismissing an error restores the previous sign-in posture', () => {
   });
   const dismissed = reduceSession(failed, { type: 'dismiss-error', now: NOW });
 
-  // The token was dropped by the failure, but the identity is known, so the
-  // app should ask for a reconnect rather than pretend the user is anonymous.
-  assert.equal(dismissed.status, 'needs-reauth');
+  // The failure kept the still-valid token, so dismissing the message returns
+  // the user to a working session instead of forcing a reconnect.
+  assert.equal(dismissed.status, 'signed-in');
   assert.equal(dismissed.error, null);
+  assert.equal(dismissed.token, 'token');
 });
 
 test('identity restore keeps a valid token signed in', () => {

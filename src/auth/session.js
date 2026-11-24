@@ -97,15 +97,19 @@ export function reduceSession(session, action) {
         updatedAt: now
       };
 
-    case 'failure':
+    case 'failure': {
+      // A cancelled/failed retry must not throw away a token that is still
+      // valid (e.g. the user opens "Reconnect Google" and changes their mind).
+      const keepToken = isTokenFresh(session, now);
       return {
         ...session,
         status: 'error',
-        token: null,
-        expiresAt: 0,
+        token: keepToken ? session.token : null,
+        expiresAt: keepToken ? session.expiresAt : 0,
         error: action.error || { code: 'signin_failed', message: 'Sign-in failed.' },
         updatedAt: now
       };
+    }
 
     case 'dismiss-error':
       return {
@@ -151,6 +155,3 @@ export function describeSession(session) {
   }
 }
 
-export function authError(code, message, extra = {}) {
-  return { code, message, ...extra };
-}

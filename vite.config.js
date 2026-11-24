@@ -3,6 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { defineConfig } from 'vite';
 import { DEFAULT_GOOGLE_SCOPES } from './src/auth/scopes.js';
+import { generateIcsFeed } from './src/ical-utils.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.resolve(__dirname, 'data');
@@ -84,14 +85,26 @@ function isAuthorized(req, urlObj) {
 // Private / loopback hostnames — blocks the tunnel/preview proxies from being
 // turned into an SSRF bridge into the local network. DNS-resolvable names that
 // resolve to private IPs are a known residual gap (see audit).
-function isPrivateHost(hostname) {
-  const host = String(hostname || '').toLowerCase().replace(/^\[|\]$/g, '');
+export function isPrivateHost(hostname) {
+  let host = String(hostname || '').toLowerCase().replace(/^\[|\]$/g, '');
   if (!host) return true;
   if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local') || host.endsWith('.internal')) {
     return true;
   }
   if (host === '::1' || host === '::' || /^f[cd][0-9a-f]{2}:/.test(host) || /^fe[89ab]/.test(host)) {
     return true; // IPv6 loopback, unspecified, ULA (fc00::/7), link-local (fe80::/10)
+  }
+  // IPv4-mapped IPv6 (::ffff:a.b.c.d or ::ffff:7f00:1) embeds an IPv4 target;
+  // normalize it so the private-range checks below still apply.
+  const mapped = host.match(/^::ffff:(.+)$/);
+  if (mapped) {
+    let embedded = mapped[1];
+    const hex = embedded.match(/^([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+    if (hex) {
+      const n = parseInt(hex[1], 16) * 65536 + parseInt(hex[2], 16);
+      embedded = [(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255].join('.');
+    }
+    host = embedded;
   }
   const v4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
   if (v4) {
@@ -105,7 +118,7 @@ function isPrivateHost(hostname) {
   return false;
 }
 
-function assertPublicHttpUrl(rawUrl, label) {
+export function assertPublicHttpUrl(rawUrl, label) {
   let parsed;
   try {
     parsed = new URL(rawUrl);
@@ -128,6 +141,30 @@ function assertPublicHttpUrl(rawUrl, label) {
 // Upstream fetches must never hang forever; a stalled Moodle/iCal host would
 // otherwise pin the single-threaded dev-server event loop connection open.
 const UPSTREAM_TIMEOUT_MS = 15000;
+
+// Follow upstream redirects manually so every hop re-passes the SSRF guard:
+// a public calendar host must not be able to 30x the proxy into loopback/LAN
+// targets (closes audit D-02b). DNS-rebinding (D-02a) remains a follow-up.
+const MAX_UPSTREAM_REDIRECTS = 5;
+export async function fetchPublicUpstream(rawUrl, options = {}, label = 'The upstream URL') {
+  let target = assertPublicHttpUrl(rawUrl, label);
+  for (let hop = 0; hop <= MAX_UPSTREAM_REDIRECTS; hop++) {
+    const res = await fetch(target.href, {
+      ...options,
+      redirect: 'manual',
+      signal: options.signal || AbortSignal.timeout(UPSTREAM_TIMEOUT_MS)
+    });
+    if (res.status >= 300 && res.status < 400) {
+      const location = res.headers.get('location');
+      if (!location) throw new Error(`${label} redirected without a Location header.`);
+      try { await res.body?.cancel(); } catch { /* socket already gone */ }
+      target = assertPublicHttpUrl(new URL(location, target).href, label);
+      continue;
+    }
+    return res;
+  }
+  throw new Error(`${label} redirected too many times (limit ${MAX_UPSTREAM_REDIRECTS}).`);
+}
 
 function ensureDbFile() {
   if (!fs.existsSync(DATA_DIR)) {
@@ -186,62 +223,10 @@ function readJsonBody(req) {
       }
     });
     req.on('error', fail);
+    // Covers client aborts where 'end' never fires; the settled flag makes
+    // this a no-op on normal completion ('close' follows 'end').
+    req.on('close', () => fail(new Error('Request closed before the body was fully received.')));
   });
-}
-
-function formatIcsDate(isoStr) {
-  const d = new Date(isoStr);
-  if (Number.isNaN(d.getTime())) return null;
-  return d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
-}
-
-function escapeIcsText(str) {
-  return String(str || '')
-    .replace(/\\/g, '\\\\')
-    .replace(/;/g, '\\;')
-    .replace(/,/g, '\\,')
-    .replace(/\r?\n/g, '\\n');
-}
-
-function generateIcsFeed(tasks = []) {
-  const lines = [
-    'BEGIN:VCALENDAR',
-    'VERSION:2.0',
-    'PRODID:-//Calen//Unified Academic Planner//EN',
-    'CALSCALE:GREGORIAN',
-    'METHOD:PUBLISH',
-    'X-WR-CALNAME:Calen Deadlines',
-    'X-WR-TIMEZONE:Asia/Manila',
-  ];
-
-  const stamp = formatIcsDate(new Date().toISOString());
-  for (const task of tasks) {
-    if (!task.dueDate) continue;
-    const endDt = new Date(task.dueDate);
-    if (Number.isNaN(endDt.getTime())) continue;
-    const startDt = new Date(endDt.getTime() - 60 * 60 * 1000);
-    const dtStart = formatIcsDate(startDt.toISOString());
-    const dtEnd = formatIcsDate(endDt.toISOString());
-    if (!dtStart || !dtEnd) continue;
-
-    const statusPrefix = task.status === 'completed' ? '[Done] ' : '';
-    const coursePrefix = task.course ? `[${task.course}] ` : '';
-    lines.push(
-      'BEGIN:VEVENT',
-      `UID:${escapeIcsText(task.id)}@calen.local`,
-      `DTSTAMP:${stamp}`,
-      `DTSTART:${dtStart}`,
-      `DTEND:${dtEnd}`,
-      `SUMMARY:${escapeIcsText(`${statusPrefix}${coursePrefix}${task.title}`)}`,
-      `DESCRIPTION:${escapeIcsText(
-        `${task.description || ''}\nPriority: ${(task.priority || 'medium').toUpperCase()}\nStatus: ${task.status || 'todo'}\nSource: ${task.source || 'personal'}`
-      )}`,
-      'END:VEVENT'
-    );
-  }
-
-  lines.push('END:VCALENDAR');
-  return lines.join('\r\n');
 }
 
 function calenServerPlugin() {
@@ -282,7 +267,21 @@ function calenServerPlugin() {
         });
         res.write(`data: ${JSON.stringify({ type: 'connected', ts: Date.now() })}\n\n`);
         sseClients.add(res);
-        req.on('close', () => sseClients.delete(res));
+        // Comment-frame heartbeat keeps tunnel/proxy idle timeouts from
+        // dropping the stream; EventSource ignores comment lines.
+        const heartbeat = setInterval(() => {
+          try {
+            res.write(': ping\n\n');
+          } catch {
+            clearInterval(heartbeat);
+            sseClients.delete(res);
+          }
+        }, 25000);
+        heartbeat.unref();
+        req.on('close', () => {
+          clearInterval(heartbeat);
+          sseClients.delete(res);
+        });
         return;
       }
 
@@ -412,10 +411,9 @@ function calenServerPlugin() {
           }
           const normalizedUrl = url.trim().replace(/^webcal:\/\//i, 'https://');
           assertPublicHttpUrl(normalizedUrl, 'The iCal URL');
-          const upstream = await fetch(normalizedUrl, {
+          const upstream = await fetchPublicUpstream(normalizedUrl, {
             headers: { 'User-Agent': 'Calen-Academic-Planner/1.0' },
-            signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
-          });
+          }, 'The iCal URL');
           if (!upstream.ok) {
             throw new Error(`Upstream calendar returned HTTP ${upstream.status}`);
           }
@@ -450,9 +448,7 @@ function calenServerPlugin() {
               wsfunction,
               ...extraParams,
             });
-            const r = await fetch(`${restEndpoint}?${params.toString()}`, {
-              signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
-            });
+            const r = await fetchPublicUpstream(`${restEndpoint}?${params.toString()}`, {}, 'The Moodle URL');
             if (!r.ok) throw new Error(`Moodle HTTP ${r.status}`);
             const data = await r.json();
             if (data && data.exception) {

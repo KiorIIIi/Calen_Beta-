@@ -1,4 +1,5 @@
-import { dayKey, groupByDeadline } from './deadlines.js';
+import { dayKey, groupByDeadline, dueSortKey } from './deadlines.js';
+import { parseIcsEvents, generateIcsFeed } from './ical-utils.js';
 import { apiUrl } from './api.js';
 import {
   subscribeAuth,
@@ -316,7 +317,7 @@ const state = {
   // Sign-in session snapshot, mirrored from src/auth so rendering stays
   // synchronous. `user` is the Firebase identity only (Firestore sync);
   // Google Calendar tokens ride along in hasGcalToken.
-  auth: { status: 'signed-out', error: null, available: false, email: '', provider: null },
+  auth: { status: 'signed-out', error: null, email: '', provider: null },
   firestoreUid: null,
   hasGcalToken: false,
   serverOnline: false,
@@ -567,7 +568,8 @@ function escapeHtml(str) {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function formatDueDate(isoString) {
@@ -631,92 +633,13 @@ function sortTasks(list) {
       const diff =
         (PRIORITY_META[b.priority]?.weight || 0) - (PRIORITY_META[a.priority]?.weight || 0);
       if (diff !== 0) return diff;
-      return new Date(a.dueDate) - new Date(b.dueDate);
+      return dueSortKey(a.dueDate) - dueSortKey(b.dueDate);
     }
     if (state.sortBy === 'source') {
       return a.source.localeCompare(b.source);
     }
-    return new Date(a.dueDate) - new Date(b.dueDate);
+    return dueSortKey(a.dueDate) - dueSortKey(b.dueDate);
   });
-}
-
-// ============================================================================
-//UNIVERSAL ICAL (.ICS) PARSER (RFC 5545 + LINE UNFOLDING + VALUE=DATE)
-// ============================================================================
-function parseIcsEvents(rawIcs, defaultSource = 'moodle', defaultCourse = 'iCal Sync') {
-  if (!rawIcs || typeof rawIcs !== 'string') return [];
-  // Unfold RFC 5545 folded lines
-  const unfolded = rawIcs.replace(/\r?\n[ \t]/g, '');
-  const blocks = unfolded.split('BEGIN:VEVENT').slice(1);
-  const events = [];
-
-  blocks.forEach((rawBlock, i) => {
-    const block = rawBlock.split('END:VEVENT')[0] || rawBlock;
-    const getField = (name) => {
-      const regex = new RegExp(`^${name}(?:;[^:]*)?:(.*)$`, 'im');
-      const m = block.match(regex);
-      return m ? m[1].trim() : '';
-    };
-
-    const rawSummary = getField('SUMMARY')
-      .replace(/\\,/g, ',')
-      .replace(/\\;/g, ';')
-      .replace(/\\n/gi, ' ')
-      .replace(/^\[Calen\]\s*/i, '');
-    const rawDesc = getField('DESCRIPTION')
-      .replace(/\\,/g, ',')
-      .replace(/\\;/g, ';')
-      .replace(/\\n/gi, '\n');
-    const rawCategories = getField('CATEGORIES').replace(/\\,/g, ',');
-    const rawUid = getField('UID') || `${Date.now()}-${i}`;
-    const dtStr = getField('DTEND') || getField('DTSTART') || getField('DUE');
-
-    let dueDate = offsetDateISO(2, 23, 59);
-    if (dtStr) {
-      const cleanDt = dtStr.trim();
-      if (/^\d{8}T\d{6}Z?$/i.test(cleanDt)) {
-        const y = cleanDt.slice(0, 4);
-        const mo = cleanDt.slice(4, 6);
-        const da = cleanDt.slice(6, 8);
-        const hr = cleanDt.slice(9, 11);
-        const mi = cleanDt.slice(11, 13);
-        const sc = cleanDt.slice(13, 15);
-        const suffix = cleanDt.endsWith('Z') ? 'Z' : '';
-        const parsed = new Date(`${y}-${mo}-${da}T${hr}:${mi}:${sc}${suffix}`);
-        if (!Number.isNaN(parsed.getTime())) dueDate = parsed.toISOString();
-      } else if (/^\d{8}$/.test(cleanDt)) {
-        // VALUE=DATE (all-day deadline) -> set to 23:59 on that date
-        const y = cleanDt.slice(0, 4);
-        const mo = cleanDt.slice(4, 6);
-        const da = cleanDt.slice(6, 8);
-        const parsed = new Date(`${y}-${mo}-${da}T23:59:00`);
-        if (!Number.isNaN(parsed.getTime())) dueDate = parsed.toISOString();
-      }
-    }
-
-    const safeUid = rawUid.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 40) || `${Date.now()}-${i}`;
-    const prefix =
-      defaultSource === 'google_calendar'
-        ? 'gcal'
-        : defaultSource === 'google_classroom'
-        ? 'gc-ical'
-        : 'mdl-ical';
-
-    events.push({
-      id: `${prefix}-${safeUid}`,
-      title: rawSummary || `${defaultCourse} Event #${i + 1}`,
-      priority: defaultSource === 'google_calendar' ? 'medium' : 'high',
-      status: 'todo',
-      source: defaultSource,
-      course: rawCategories || defaultCourse,
-      dueDate,
-      description: rawDesc || `Imported via ${defaultCourse} (.ics) feed`,
-      ...(defaultSource === 'google_calendar' ? { gcalEventId: safeUid } : {}),
-      subtasks: []
-    });
-  });
-
-  return events;
 }
 
 function mergeImportedTasks(importedTasks) {
@@ -835,9 +758,11 @@ function renderReminderBanner() {
     return;
   }
 
+  // Only dated, pending tasks can be a "next deadline"; undated tasks would
+  // otherwise poison the sort with NaN and hijack the banner.
   const pendingUrgent = state.tasks
-    .filter((t) => t.status !== 'completed')
-    .sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
+    .filter((t) => t.status !== 'completed' && dueSortKey(t.dueDate) !== Infinity)
+    .sort((a, b) => dueSortKey(a.dueDate) - dueSortKey(b.dueDate));
 
   if (pendingUrgent.length === 0) {
     banner.classList.add('hidden');
@@ -1626,44 +1551,18 @@ async function handleGcalIcalUrlSync() {
 }
 
 function downloadClientIcsFile() {
-  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
-  const lines = [
-    'BEGIN:VCALENDAR',
-    'VERSION:2.0',
-    'PRODID:-//Calen//Unified Academic Planner//EN',
-    'CALSCALE:GREGORIAN',
-    'METHOD:PUBLISH',
-    'X-WR-CALNAME:Calen Deadlines',
-    'X-WR-TIMEZONE:Asia/Manila'
-  ];
-  for (const task of state.tasks) {
-    if (!task.dueDate) continue;
-    const endDt = new Date(task.dueDate);
-    if (Number.isNaN(endDt.getTime())) continue;
-    const startDt = new Date(endDt.getTime() - 60 * 60 * 1000);
-    const dtStart = startDt.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
-    const dtEnd = endDt.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
-    const title = `${task.status === 'completed' ? '[Done] ' : ''}${
-      task.course ? `[${task.course}] ` : ''
-    }${task.title}`.replace(/[,;\\]/g, ' ');
-    lines.push(
-      'BEGIN:VEVENT',
-      `UID:${task.id}@calen.local`,
-      `DTSTAMP:${stamp}`,
-      `DTSTART:${dtStart}`,
-      `DTEND:${dtEnd}`,
-      `SUMMARY:${title}`,
-      'END:VEVENT'
-    );
-  }
-  lines.push('END:VCALENDAR');
-  const blob = new Blob([lines.join('\r\n')], { type: 'text/calendar;charset=utf-8' });
+  // Same generator as the server's /api/calendar.ics feed: proper RFC 5545
+  // escaping and 75-octet line folding instead of stripping punctuation.
+  const ics = generateIcsFeed(state.tasks);
+  const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
+  const objectUrl = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
+  a.href = objectUrl;
   a.download = 'calen-deadlines.ics';
   document.body.appendChild(a);
   a.click();
   a.remove();
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
   showGcalFeedback('Downloaded calen-deadlines.ics! Import it into Google Calendar or your phone calendar.');
 }
 
@@ -1719,15 +1618,26 @@ async function handleGcalImport() {
 }
 
 function handleGcalBulkExportPrompt() {
-  const pendingTasks = state.tasks.filter((t) => t.status !== 'completed');
+  const pending = state.tasks.filter((t) => t.status !== 'completed');
+  // Google Calendar events need a real deadline; undated tasks cannot be pushed.
+  const pendingTasks = pending.filter((t) => dueSortKey(t.dueDate) !== Infinity);
   if (pendingTasks.length === 0) {
-    showGcalFeedback('All tasks are already completed — no pending deadlines to push.', true);
+    showGcalFeedback(
+      pending.length === 0
+        ? 'All tasks are already completed — no pending deadlines to push.'
+        : 'No pending tasks have a due date — add deadlines before pushing to Google Calendar.',
+      true
+    );
     return;
   }
 
   openGcalConfirmation({
     title: `Push ${pendingTasks.length} Deadline(s) to Google Calendar?`,
-    description: `This will create or update ${pendingTasks.length} event(s) on your primary Google Calendar. Please confirm to proceed:`,
+    description: `This will create or update ${pendingTasks.length} event(s) on your primary Google Calendar.${
+      pending.length > pendingTasks.length
+        ? ` (${pending.length - pendingTasks.length} undated task(s) will be skipped.)`
+        : ''
+    } Please confirm to proceed:`,
     items: pendingTasks.map((t) => ({
       title: t.title,
       meta: formatDueDate(t.dueDate).text
@@ -1812,6 +1722,11 @@ function openTaskModal(taskId) {
     const min = String(dt.getMinutes()).padStart(2, '0');
     document.getElementById('task-date').value = `${yyyy}-${mm}-${dd}`;
     document.getElementById('task-time').value = `${hh}:${min}`;
+  } else {
+    // Undated task: clear the fields so a previously edited task's deadline
+    // is not silently pre-filled (and saved) onto this one.
+    document.getElementById('task-date').value = '';
+    document.getElementById('task-time').value = '';
   }
 
   document.getElementById('btn-delete-task').classList.remove('hidden');
@@ -2012,6 +1927,9 @@ async function applyMoodleCourseSync() {
     mergedMap.set(t.id, existing || t);
   });
 
+  // Tasks dropped by un-syncing a course must also leave the cloud mirror,
+  // or the next Firestore snapshot resurrects them.
+  const removedTasks = state.tasks.filter((t) => !mergedMap.has(t.id));
   state.tasks = Array.from(mergedMap.values());
   saveLocalState();
   renderAll();
@@ -2019,7 +1937,12 @@ async function applyMoodleCourseSync() {
   if (state.user) {
     await saveMoodleCoursesToFirestore(state.user.uid, state.moodleCourses);
     for (const t of courseAssignments) {
-      await saveTaskToFirestore(state.user.uid, t);
+      // Persist the merged task (local edits win), not the raw upstream
+      // template — writing the template would reset status/color in the cloud.
+      await saveTaskToFirestore(state.user.uid, mergedMap.get(t.id) || t);
+    }
+    for (const t of removedTasks) {
+      await deleteTaskFromFirestore(state.user.uid, t.id);
     }
   }
 
@@ -2583,7 +2506,16 @@ function initEvents() {
     const id = document.getElementById('task-id').value || `task-${Date.now()}`;
     const dateVal = document.getElementById('task-date').value;
     const timeVal = document.getElementById('task-time').value || '23:59';
-    const dueIso = new Date(`${dateVal}T${timeVal}`).toISOString();
+    // Empty date = intentional "no deadline" (stored as '', grouped as No date).
+    let dueIso = '';
+    if (dateVal) {
+      const parsed = new Date(`${dateVal}T${timeVal}`);
+      if (Number.isNaN(parsed.getTime())) {
+        document.getElementById('task-date').focus();
+        return;
+      }
+      dueIso = parsed.toISOString();
+    }
 
     const existingIdx = state.tasks.findIndex((t) => t.id === id);
     const prevTask = existingIdx >= 0 ? state.tasks[existingIdx] : {};
@@ -2647,7 +2579,10 @@ function initEvents() {
       renderAll();
       if (state.user) {
         for (const t of imported) {
-          await saveTaskToFirestore(state.user.uid, t);
+          // Write the merged task from state (existing edits preserved), not
+          // the raw import object, which would reset status/priority in cloud.
+          const merged = state.tasks.find((x) => x.id === t.id);
+          await saveTaskToFirestore(state.user.uid, merged || t);
         }
       }
       showFeedbackBox(
@@ -2732,8 +2667,7 @@ function initEvents() {
       status: session.status,
       error: session.error,
       email: session.user?.email || '',
-      provider: session.provider,
-      available: getAuthProviders().some((provider) => provider.available)
+      provider: session.provider
     };
     state.user = cloudUser || null;
     state.hasGcalToken = Boolean(session.token);

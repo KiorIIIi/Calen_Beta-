@@ -56,7 +56,11 @@ async function testConnection() {
     }
   }
 }
-testConnection();
+// Only probe when a Firebase user was already restored from persistence: an
+// anonymous page load would otherwise open a Firestore listen stream and log a
+// transport warning on every visit. Signed-in sessions exercise the connection
+// through their real listeners.
+if (auth.currentUser) testConnection();
 
 // ============================================================================
 // GOOGLE CALENDAR REST API HELPERS
@@ -109,6 +113,9 @@ export async function upsertGoogleCalendarEvent(task) {
   }
 
   const due = new Date(task.dueDate);
+  if (Number.isNaN(due.getTime())) {
+    throw new Error('This assignment has no valid deadline, so it cannot be synced to Google Calendar.');
+  }
   const start = new Date(due.getTime() - 60 * 60 * 1000); // 1 hour block ending at deadline
 
   const body = {

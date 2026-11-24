@@ -48,6 +48,15 @@ Now, **Calen** uses a **3-Layer Hybrid Sync Architecture** built into [`vite.con
    - Your server hosts a live iCalendar feed at `https://<your-tunnel>/api/calendar.ics` (and a **Download `.ics`** button inside the Google Calendar modal).
    - You can add this URL to **Google Calendar** (*Settings → Add calendar → From URL*) or **Apple Calendar / Outlook** on your phone so your deadlines live natively inside your phone's calendar app 24/7.
 
+### Sign-in endpoints
+
+`GET /api/auth/providers`, `POST /api/auth/google/verify` and
+`POST /api/auth/signout` are part of the same middleware, so they follow the
+workspace-token rule below when `CALEN_WORKSPACE_TOKEN` is set (the app attaches
+the token automatically). A static `dist/` deployment has none of these routes;
+sign-in then needs `VITE_GOOGLE_CLIENT_ID` (and optionally
+`VITE_GOOGLE_OAUTH_SCOPES`) baked in at build time.
+
 ### Optional: locking the shared workspace API behind a token
 
 By default the `/api/*` endpoints are open, matching the "one shared laptop database" design above. If your tunnel is exposed to people you do not trust, start the server with a shared token:
@@ -87,25 +96,35 @@ While **Sign in with Google** is disabled for now, all three platforms are fully
 
 ## 4. Options to Enable "Login with Google" on Your Laptop Server
 
-Currently, `GOOGLE_LOGIN_ENABLED` is set to `false` in [`src/firebase.js`](file:///D:/Projects_26/CALEN/src/firebase.js#L25). When you are ready to turn Google Login back on for your laptop server, here are your **4 best options**:
+Sign-in is enabled by configuration, not by a feature flag: `src/auth/` asks
+`GET /api/auth/providers` which connectors this server offers and walks them in
+order (`CALEN_AUTH_CONNECTORS`, default `firebase,google-gis`). No client secret
+or refresh token is stored server-side.
 
 ### Option 1: Static Tunnel Domain + Firebase Authorized Domains (Easiest)
-Why Firebase Google Sign-In fails on `nokey@localhost.run` is that the random `*.lhr.life` subdomain changes periodically, and Firebase requires the domain to be whitelisted.
-1. Use a **free static tunnel domain**:
-   - **Ngrok Free Static Domain**: Claim your 1 free static domain in the ngrok dashboard (`your-name.ngrok-free.app`) and run `ngrok http --url=your-name.ngrok-free.app 3000`.
-   - **Tailscale Funnel** or **Cloudflare Tunnel (`cloudflared`)**: Gives you a permanent `https://...` hostname.
-2. Add that single static domain under **Firebase Console → Authentication → Settings → Authorized domains**.
-3. Set `GOOGLE_LOGIN_ENABLED = true` in [`src/firebase.js`](file:///D:/Projects_26/CALEN/src/firebase.js#L25).
+Firebase popups fail on rotating `*.lhr.life` subdomains because the domain must
+be whitelisted.
+1. Use a **stable tunnel hostname**:
+   - **Ngrok Free Static Domain**: claim the free static domain and run `ngrok http --url=your-name.ngrok-free.app 3000`.
+   - **Tailscale Funnel** or **Cloudflare Tunnel (`cloudflared`)** also give a permanent `https://` hostname.
+2. Add that domain under **Firebase Console → Authentication → Settings → Authorized domains**.
+3. Enable the **Google** provider under **Authentication → Sign-in method**.
 
-### Option 2: Server-Side Google OAuth2 + Refresh Token on the Laptop (Best for Personal Single-User Server)
-Since the Vite/Node server runs on your laptop (`http://localhost:3000`), your laptop *is* an authorized redirect origin (`http://localhost:3000/api/auth/google/callback`)!
-- You log in with Google **once** on `http://localhost:3000` on your laptop.
-- The laptop server stores your **Google OAuth Refresh Token** locally in `data/google-tokens.json` (never exposed to the browser) and automatically refreshes your Google Calendar & Google Classroom access tokens in the background.
-- When you open `https://<any-tunnel>.lhr.life` on your phone, the laptop server performs the Google Calendar & Classroom syncs on your behalf without your phone ever needing a Google Login popup!
+### Option 2: Browser OAuth Connector (no Firebase domain setup)
+If Firebase domain allow-listing is inconvenient, use the Google Identity
+Services connector instead:
+- In **Google Cloud Console → APIs & Services → Credentials**, open the OAuth
+  client used by `firebase-applet-config.json` and add each origin you browse
+  from (for example `http://localhost:3000`, `https://your-name.ngrok-free.app`)
+  to **Authorized JavaScript origins**.
+- Run with `CALEN_AUTH_CONNECTORS=google-gis` (or keep both and let Firebase be
+  tried first).
+- This connector supplies a Google token and profile, so Calendar/Classroom sync
+  works, but Firestore cloud sync stays off (it needs the Firebase identity).
 
 ### Option 3: SSH Key with `localhost.run` (Semi-Permanent Domain)
 - Generate an SSH key on your laptop (`ssh-keygen -t ed25519`) and register it at `https://admin.localhost.run/`.
-- `localhost.run` will assign you a **sticky subdomain** instead of rotating it every 10 minutes, which you can then add to Firebase's Authorized Domains.
+- `localhost.run` will assign you a **sticky subdomain** instead of rotating it every 10 minutes, which you can then add to Firebase's Authorized Domains or the OAuth client's authorized origins.
 
 ### Option 4: Google OAuth Playground Token (Quick Testing)
 - Generate a token at [Google OAuth 2.0 Playground](https://developers.google.com/oauthplayground/) with the `calendar.events` and `classroom.courses.readonly` scopes and paste it into the in-memory token field inside the Google Calendar or Google Classroom modal.

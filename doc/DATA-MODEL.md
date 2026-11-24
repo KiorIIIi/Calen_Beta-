@@ -54,7 +54,7 @@ Defined in `firebase-blueprint.json` and used throughout `src/app.js`.
 | `source` | string enum | Yes | `moodle`, `google_classroom`, `google_calendar`, `notion`, `trello`, `personal` |
 | `color` | string enum | No | `auto`, `rose`, `peach`, `butter`, `sage`, `sky`, `lavender`; absent/invalid values render as Auto (source color). Persisted by existing local/workspace/Firestore task serialization; not exported to Google Calendar or iCal. |
 | `course` | string | No | Free-text course or project label |
-| `dueDate` | string | Yes in cloud | ISO 8601 timestamp, max 64 characters |
+| `dueDate` | string | Yes in cloud | ISO 8601 timestamp, max 64 characters; empty string `''` means no deadline (accepted by rules) |
 | `description` | string | No | Free-text notes |
 | `gcalEventId` | string | No | Google Calendar event ID when linked |
 | `subtasks` | array | No | Checklist items; not validated by Firestore rules |
@@ -219,6 +219,7 @@ Collision avoidance relies on timestamps for user-created IDs. There is no UUID 
 ## 8. Date and Time Semantics
 
 - `dueDate` is stored as a JavaScript ISO string (`toISOString()`), normally UTC (`...Z`).
+- A task can be undated: `dueDate: ''` (empty string). Such tasks group as "No date", sort last, and are excluded from the calendar grid, ICS exports, and Google Calendar pushes. The assignment editor's due date is optional; editing an undated task leaves the date fields empty.
 - Deadline grouping (`groupByDeadline`) and most displayed deadline labels use the `Asia/Manila` timezone.
 - The calendar grid groups tasks by the browser's local date methods, which can differ from the `Asia/Manila` grouping near midnight.
 - New tasks default to `23:59` local time on the selected date.
@@ -246,6 +247,7 @@ Collision avoidance relies on timestamps for user-created IDs. There is no UUID 
 | `firebase-blueprint.json` | Documented entity shape and required properties |
 | `src/app.js` | Runtime defaults, filtering, grouping, and UI-level constraints |
 | `src/deadlines.js` | Date parsing and deadline bucket assignment |
+| `src/ical-utils.js` | RFC 5545 parsing/generation shared by app and server (escaping, folding, CANCELLED skip) |
 
 When changing a persisted field, update all applicable artifacts:
 

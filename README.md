@@ -82,7 +82,8 @@ Vite will start the development server on **http://localhost:3000**. Open that U
 
 - Vite serves `/api/workspace`, `/api/events`, `/api/calendar.ics` and import proxies in both development and preview mode. Shared workspace data is written to `data/workspace-db.json`; preserve it when updating an existing installation.
 - Browser storage and cross-tab updates remain available. The server workspace is shared across clients of the same running instance; it is not an authenticated per-user database.
-- Google popup sign-in is currently disabled by `GOOGLE_LOGIN_ENABLED = false` in `src/firebase.js`. Firebase and Calendar helper code exists, but configuring Firebase alone does not enable the sign-in UI. The Calendar and Classroom dialogs also accept in-memory access tokens; these are not persisted across reloads.
+- Sign-in lives in `src/auth/` and is connector-based: Google via Firebase Auth, with a Google Identity Services token client as fallback. The app reads the enabled connectors from `GET /api/auth/providers`; no provider code or client secret is hardcoded in `src/app.js`. Details: [doc/AUTH.md](doc/AUTH.md).
+- Google access tokens remain memory-only. Firebase sign-in restores the cloud identity after a reload (enabling Firestore sync), but Calendar/Classroom API calls need a reconnect. The Calendar and Classroom dialogs also accept pasted access tokens for testing.
 - Moodle supports REST-token imports and iCalendar feeds. Classroom supports access-token imports and iCalendar feeds. Actual access depends on the upstream account permissions and API configuration.
 - `npm run build` produces `dist/`. Static hosting alone does not provide the Vite API routes. For local build review, run `npm run preview`; this also loads the workspace middleware.
 - The workspace and proxy routes have no application authentication. Keep this development runtime on a trusted network. Publishing a tunnel exposes the shared workspace and import routes.
@@ -94,9 +95,10 @@ The app works out of the box using local storage (`localStorage`) even before si
 1. **Firebase Configuration (`firebase-applet-config.json`)**:
    - The root `firebase-applet-config.json` file holds the Firebase Web SDK configuration (`apiKey`, `authDomain`, `projectId`, `firestoreDatabaseId`, `appId`, `oAuthClientId`).
    - If you want to connect your own Firebase project, replace the values in `firebase-applet-config.json` with your Firebase web app credentials from **Firebase Console → Project Settings → General**.
-2. **Enable Google Sign-In**:
-   - In **Firebase Console → Authentication → Sign-in method**, enable the **Google** provider.
-   - Under **Authentication → Settings → Authorized domains**, ensure `localhost` is listed so Google Sign-In popups work locally.
+2. **Enable Google Sign-In** (one of two connectors is enough):
+   - *Firebase connector*: in **Firebase Console → Authentication → Sign-in method**, enable the **Google** provider, and add `localhost` / your domain under **Authentication → Settings → Authorized domains**. This connector also provides the Firestore identity.
+   - *Browser OAuth connector*: in **Google Cloud Console → APIs & Services → Credentials**, open the OAuth client and add your app origin (for example `http://localhost:3000`) under **Authorized JavaScript origins**. It needs no client secret.
+   - Choose the order with the `CALEN_AUTH_CONNECTORS` env var (default `firebase,google-gis`).
 3. **Google Calendar API**:
    - In the **Google Cloud Console** for the same project, enable the **Google Calendar API** under **APIs & Services → Library**.
    - Ensure the OAuth consent screen allows the `https://www.googleapis.com/auth/calendar.events` scope.
@@ -112,5 +114,6 @@ The app works out of the box using local storage (`localStorage`) even before si
 | `npm run dev` | Starts the Vite local development server at `http://localhost:3000` |
 | `npm run build` | Bundles the production HTML, CSS, and JS into the `dist/` folder |
 | `npm run preview` | Locally previews the production build from `dist/` |
-| `npm run lint` | Validates JavaScript syntax across `src/app.js` and `src/firebase.js` |
+| `npm run lint` | Syntax-checks the app, auth module, Firebase helpers and Vite config |
 | `npm run clean` | Removes build artifacts (`dist/`) |
+| `node --test tests/auth.test.js tests/deadlines.test.js` | Unit tests (session reducer + deadline grouping) |

@@ -12,6 +12,8 @@ This folder is the reference for how the project is built, how its pieces fit to
 | [ARCHITECTURE.md](./ARCHITECTURE.md) | System structure, modules, state management, data flow, integrations, and extension points |
 | [DATA-MODEL.md](./DATA-MODEL.md) | Task/course/settings schemas, local storage keys, Firestore paths, and security rules |
 | [MERGE-REVIEW-2026-10-30.md](./MERGE-REVIEW-2026-10-30.md) | Core conflict decisions and verification for integrating development into main |
+| [SECURITY-AUDIT-2026-11-16.md](./SECURITY-AUDIT-2026-11-16.md) | Backend security & consistency audit with fix dispositions |
+| [AUDIT-FIXES-2026-11-20.md](./AUDIT-FIXES-2026-11-20.md) | Follow-up audit: 12 fixes (undated-task handling, cloud-write divergence, SSRF redirects, shared ICS module) + feature recommendations |
 
 ## Project Summary
 

@@ -85,3 +85,24 @@ Workspace JSON data was snapshotted before the POST smoke tests and restored aft
 1. Resolve D-02 (DNS-per-connection resolution + manual redirect handling in the proxies) if the tunnel will be shared beyond trusted devices.
 2. Decide whether `classroomCourses` should get a Firestore home (`/users/{uid}/classroom_courses`) — currently only tasks, Moodle courses, and settings persist to cloud; Classroom data lives in localStorage/workspace JSON only. Per repo conventions this touches rules + `firebase-blueprint.json` + docs, so it was left as a decision rather than patched in.
 3. When Google login is re-enabled, re-run this audit against the enabled auth paths (`GOOGLE_LOGIN_ENABLED = true`).
+
+## 7. Postscript — sign-in re-enabled (2026-11-17)
+
+The `GOOGLE_LOGIN_ENABLED` flag is gone. Sign-in now lives in `src/auth/` as a
+connector module (`doc/AUTH.md`) and is configured through `/api/auth/providers`
+rather than a hardcoded boolean. Deltas relevant to this audit:
+
+- The access token moved from `cachedAccessToken` in `src/firebase.js` to the
+  session object in `src/auth/session.js`. It is still memory-only; there is
+  still no refresh-token or server-side token storage.
+- New surface: `GET /api/auth/providers` (public config), `POST
+  /api/auth/google/verify` (Google `tokeninfo` validation, rejects a mismatched
+  `aud`/`azp`, never echoes or logs the token), `POST /api/auth/signout`
+  (stateless acknowledgement). All three sit behind the existing
+  `CALEN_WORKSPACE_TOKEN` gate when it is enabled.
+- No OAuth client secret exists in the project; tokens are obtained in the
+  browser by the Firebase or Google Identity Services connector.
+- Follow-up 3 above remains open: the popup and consent flows still need manual
+  verification with a real Google account, and Firestore cloud sync only works
+  through the Firebase connector (browser-OAuth sessions have no Firebase uid).
+

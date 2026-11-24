@@ -54,13 +54,24 @@ CALEN/
 |                                 calendar/confirmation dialogs
 |-- src/
 |   |-- app.js                    Application state, rendering, event wiring,
-|   |                             moodle course demo data, iCal parser, feature flows
-|   |-- firebase.js               Firebase init, auth helpers, Firestore helpers,
-|   |                             Google Calendar REST helpers
-|   |-- deadlines.js              Pure timezone-aware deadline grouping
+|   |                             moodle course demo data, feature flows
+|   |-- api.js                    Same-origin API fetch helpers + workspace token
+|   |-- auth/
+|   |   |-- index.js              Sign-in facade (the only auth import app.js uses)
+|   |   |-- session.js            Pure session reducer + token freshness
+|   |   |-- config.js             /api/auth/providers discovery + env fallback
+|   |   |-- scopes.js             Shared Google scope list
+|   |   `-- connectors/           firebase.js (Firebase Auth), google-gis.js (browser OAuth)
+|   |-- firebase-app.js           Single Firebase initializeApp: db, auth
+|   |-- firebase.js               Firestore helpers, Google Calendar REST helpers
+|   |-- deadlines.js              Pure timezone-aware deadline grouping + dueSortKey
+|   |-- ical-utils.js             Pure RFC 5545 parser/generator shared with vite.config.js
 |   `-- style.css                 Design tokens, layout, components, themes, responsive rules
 |-- public/assets/                Local SVG icons and images
 |-- tests/deadlines.test.js       Node built-in unit tests
+|-- tests/auth.test.js            Session reducer unit tests
+|-- tests/ical-utils.test.js      ICS parser/generator unit tests
+|-- tests/server-security.test.js SSRF guard + redirect re-validation unit tests
 |-- firebase-applet-config.json   Firebase web config and OAuth client ID
 |-- firebase-blueprint.json       Collection/entity schema blueprint
 |-- firestore.rules               Deployed security and validation rules
@@ -100,30 +111,48 @@ Single module that owns:
 | Task mutations | `persistTask`, `toggleTaskCompleted`, `cycleTaskPriority`, `cycleTaskStatus` |
 | Google Calendar flows | `ensureGoogleCalendarToken`, `handleGcalImport`, `handleGcalBulkExportPrompt`, `openGcalConfirmation`, `renderGcalModalContent` |
 | Dialogs | `openNewTaskModal`, `openTaskModal`, `openMoodleModal`, `openSettingsModal`, `renderDraftSubtasks` |
-| Moodle | `applyMoodleCourseSync`, iCal parser inside `initEvents` |
+| Moodle | `applyMoodleCourseSync`, iCal paste import (parser lives in `src/ical-utils.js`) |
 | Event wiring | `initEvents` |
 | Bootstrap | `loadLocalState(); initEvents(); renderAll();` |
 
 ### 3.3 `src/firebase.js` - Cloud and External API Boundary
 
-- Initializes Firebase once and exports `db` and `auth`.
+- `src/firebase-app.js` initializes Firebase once and exports `db` and `auth`;
+  this module no longer contains any sign-in code.
 - Runs a best-effort Firestore connectivity check against `test/connection`.
-- Owns the OAuth provider, requested scopes, and the in-memory access-token cache.
-- Exposes auth helpers: `googleSignIn`, `getAccessToken`, `logoutUser`, `subscribeAuth`, `initAuth`.
+- Reads the Google access token from `src/auth` (`getAccessToken`,
+  `invalidateAccessToken`) instead of caching its own.
 - Exposes Firestore helpers: `subscribeUserWorkspace`, `saveTaskToFirestore`, `deleteTaskFromFirestore`, `saveMoodleCoursesToFirestore`, `saveSettingsToFirestore`, `seedWorkspaceToFirestore`.
 - Exposes Calendar helpers: `fetchGoogleCalendarEvents`, `upsertGoogleCalendarEvent`, `deleteGoogleCalendarEvent`.
 - Normalizes Firestore failures through `handleFirestoreError`, which logs structured auth context and rethrows a JSON error.
 
-### 3.4 `src/deadlines.js` - Pure Domain Logic
+### 3.4 `src/auth/` - Sign-in Module
+
+Provider-agnostic sign-in. `app.js` imports only the facade:
+
+- `subscribeAuth(fn)` emits the session on every change (and immediately).
+- `signIn()` walks the connector order from `/api/auth/providers`, falling
+  through on configuration failures and stopping on user cancellation.
+- `ensureAccessToken()`, `getAccessToken()`, `hasAccessToken()` own the
+  in-memory token; `invalidateAccessToken()` drops it on a Google `401`/`403`.
+- `setManualAccessToken()` supports the pasted-token field in Calendar settings.
+- `signOut()` clears the token and the Firebase identity.
+
+Connectors: `firebase` (Firebase Auth popup — also supplies the Firestore
+identity) and `google-gis` (Google Identity Services token client, public client
+id only). `src/auth/session.js` is a pure reducer covered by
+`tests/auth.test.js`. Full detail: [AUTH.md](./AUTH.md).
+
+### 3.5 `src/deadlines.js` - Pure Domain Logic
 
 Two functions with no DOM or network dependencies:
 
 - `dayKey(value)` returns a `YYYY-MM-DD` key in `Asia/Manila` for a date value.
 - `groupByDeadline(tasks, now)` groups tasks into `Overdue`, `Today`, `Upcoming`, `No date`, and `Completed`.
 
-This module is the only part covered by automated tests.
+This module and `src/auth/session.js` are the parts covered by automated tests.
 
-### 3.5 `src/style.css` - Design System
+### 3.6 `src/style.css` - Design System
 
 - CSS variables for light and dark themes (`:root` and `.dark`).
 - Semantic color groups: rose, peach, butter, sage, sky, lavender, stone.
@@ -140,8 +169,8 @@ This module is the only part covered by automated tests.
 1. Browser loads index.html.
 2. style.css is applied.
 3. app.js executes as an ES module.
-4. app.js imports deadlines.js and firebase.js.
-5. firebase.js initializes Firebase and starts testConnection().
+4. app.js imports deadlines.js, api.js, auth/index.js and firebase.js.
+5. firebase-app.js initializes Firebase; firebase.js starts testConnection().
 6. app.js calls loadLocalState():
    - parses an optional #sync= transfer payload,
    - reads tasks, Moodle courses, and settings from localStorage,
@@ -150,27 +179,37 @@ This module is the only part covered by automated tests.
    - installs dialog focus management and keyboard handling,
    - binds all view, filter, form, theme, sync, and dialog controls,
    - subscribes to BroadcastChannel,
-   - subscribes to Firebase auth state.
+   - subscribes to the sign-in session (`subscribeAuth`), which triggers
+     `/api/auth/providers` discovery and Firebase identity restore.
 8. app.js calls renderAll() to paint the initial UI.
 ```
 
 ### 4.2 Authentication lifecycle
 
 ```text
-subscribeAuth(callback)
+subscribeAuth(callback)                     signIn()
+        |                                       |
+        v                                       v
+initAuth(): GET /api/auth/providers      connector order from the API
+        |                                       |
+        +--> Firebase onAuthStateChanged        +-- firebase  --> popup, token + cloudUser
+        |    (restores cloud identity)          |     on unavailable/cancelled -> next
+        |                                       +-- google-gis -> token client (public id)
+        v                                       |
+  session snapshot  <--------------------------+
         |
-        v
-onAuthStateChanged(auth)
-        |
-        +-- user present + cached token --> callback(user, token): cloud mode
-        +-- user present, no token     --> callback(user, null): signed in locally,
-        |                                  Calendar API not currently authorized
-        +-- no user                    --> callback(null, null): local-only mode
+        +-- cloudUser + fresh token  --> Firestore sync + Calendar API
+        +-- cloudUser, no token      --> Firestore sync, Calendar needs reconnect
+        +-- no cloudUser, token      --> Calendar API only (browser OAuth)
+        `-- nothing                  --> local-only mode
 ```
 
-When the user becomes available, `app.js` subscribes to the user's Firestore workspace. Any previous subscription is unsubscribed first, preventing duplicate listeners across sign-in/sign-out cycles.
+`app.js` subscribes to the Firestore workspace once per cloud UID and detaches
+when the identity disappears, so token refreshes never duplicate listeners.
 
-The token is deliberately held only in `cachedAccessToken`. A page reload signs the Firebase user back in but clears Calendar API authorization, requiring re-consent before Calendar operations. This is a security trade-off, not an oversight.
+The Google access token lives only in the `src/auth` session object (memory).
+A page reload restores the Firebase identity but not Calendar authorization —
+reconnecting is one click and is a security trade-off, not an oversight.
 
 ### 4.3 Firestore subscription behavior
 
@@ -192,8 +231,8 @@ const state = {
   priorityFilter, sourceFilter, courseFilter, statusFilter,
   searchQuery, sortBy, reminderDismissed,
   editingTaskId, draftSubtasks,
-  user, hasGcalToken, unsubFirestore, pendingConfirmCallback,
-  tasks, moodleCourses, settings
+  user, auth, firestoreUid, hasGcalToken, unsubFirestore,
+  pendingConfirmCallback, tasks, moodleCourses, settings
 };
 ```
 
@@ -204,7 +243,7 @@ Categories:
 | Navigation | `activeView`, `subView`, `calMode`, `calCursor` |
 | Filtering | `priorityFilter`, `sourceFilter`, `courseFilter`, `statusFilter`, `searchQuery`, `sortBy` |
 | UI/session | `reminderDismissed`, `editingTaskId`, `draftSubtasks`, `pendingConfirmCallback` |
-| Identity/cloud | `user`, `hasGcalToken`, `unsubFirestore` |
+| Identity/cloud | `user` (Firebase identity), `auth` (session snapshot), `firestoreUid`, `hasGcalToken`, `unsubFirestore` |
 | Domain data | `tasks`, `moodleCourses`, `settings` |
 
 Notes:
@@ -429,7 +468,9 @@ See [DATA-MODEL.md](./DATA-MODEL.md) for exact schemas.
 
 ### 9.2 Client-side protections
 
-- OAuth access tokens stay in memory only; sign-out clears them.
+- OAuth access tokens stay in memory only (`src/auth` session); sign-out clears them.
+- Sign-in configuration is fetched from `/api/auth/providers`; the browser holds no provider code beyond the connectors and no client secret exists.
+- `/api/auth/google/verify` rejects tokens whose `aud`/`azp` is not this deployment's client id.
 - User text is HTML-escaped before insertion into rendered markup.
 - Google Calendar mutations require an explicit confirmation dialog.
 - Calendar API `401`/`403` responses clear the cached token and surface `NEEDS_AUTH`.
@@ -487,10 +528,10 @@ The project is also structured for AI Studio applet hosting, as indicated by `me
 5. **No live Notion, Classroom, or Trello clients**: These sources exist as filters, demo data, and visibility toggles.
 6. **Google token lifetime**: The access token is not proactively refreshed; a reload or expiry requires sign-in again.
 7. **No offline write queue**: Cloud writes fail immediately when offline; there is no retry or conflict resolution.
-8. **Seeding limits**: `seedWorkspaceToFirestore` uses one `writeBatch`; Firestore caps a batch at 500 writes.
-9. **Simplified iCal parser**: Handles basic event blocks only.
+8. **Seeding limits**: `seedWorkspaceToFirestore` commits in 450-write chunks (Firestore caps a batch at 500); a mid-seed failure can leave a partial seed.
+9. **Simplified iCal parser**: `src/ical-utils.js` handles folding, `VALUE=DATE`, and CANCELLED skips; TZID-qualified times and RRULE recurrence are ignored.
 10. **Timezone split**: Deadline grouping uses `Asia/Manila`; calendar-grid grouping uses browser local time.
-11. **No automated UI tests**: Only `deadlines.js` has unit coverage.
+11. **No automated UI tests**: Unit coverage spans `deadlines`, `auth`, `ical-utils`, and `server-security`.
 12. **Potential duplicate seeding**: The empty-snapshot seeding path can run again if local state remains non-empty before the seeded snapshot arrives.
 
 ## 13. Safe Extension Points

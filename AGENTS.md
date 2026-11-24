@@ -32,7 +32,7 @@ Notes and working context for AI agents (and humans) operating on this repositor
 | `npm run build` | Production build to `dist/` |
 | `npm run lint` | Syntax check on `src/app.js` and `src/firebase.js` |
 | `npm run clean` | Remove `dist/` and `server.js` |
-| `node --test tests/deadlines.test.js` | Unit tests (not wired to an npm script) |
+| `node --test tests/deadlines.test.js tests/auth.test.js tests/ical-utils.test.js tests/server-security.test.js` | Unit tests (not wired to an npm script) |
 
 After any edit: run `npm run lint` and, if touching deadline logic, `node --test tests/deadlines.test.js`.
 
@@ -43,7 +43,8 @@ After any edit: run `npm run lint` and, if touching deadline logic, `node --test
 | `index.html` | Static shell: sidebar, tasks/calendar views, quick-add, 5 modal dialogs (`#modal-task`, `-settings`, `-moodle`, `-gcal`, `-confirm-gcal`) |
 | `src/app.js` (~2000 lines) | All app state, rendering, event wiring, Moodle demo data, iCal parser, feature flows |
 | `src/firebase.js` | Firebase init, Google auth (in-memory token), Firestore helpers, Google Calendar REST helpers |
-| `src/deadlines.js` | Pure timezone-aware deadline grouping (the only tested module) |
+| `src/deadlines.js` | Pure timezone-aware deadline grouping + `dueSortKey` |
+| `src/ical-utils.js` | Pure RFC 5545 parser/generator shared by `app.js` and `vite.config.js` (escaping, folding, CANCELLED skip) |
 | `src/style.css` | Design tokens (light/dark via `.dark` class), layout, components, responsive breakpoints |
 | `firestore.rules` | Deployed auth + field validation; deny-by-default, per-user isolation |
 | `firebase-blueprint.json` | Entity schema reference (keep in sync with rules when schema changes) |
@@ -80,11 +81,11 @@ After any edit: run `npm run lint` and, if touching deadline logic, `node --test
 - Vite workspace/proxy endpoints have no application authentication and share one JSON workspace. Do not describe them as per-user cloud storage.
 - Google popup sign-in is disabled by `GOOGLE_LOGIN_ENABLED = false`; access-token helpers remain in memory.
 - No token refresh, offline write queue, or conflict resolution.
-- `seedWorkspaceToFirestore` uses one batch (Firestore caps at 500 writes).
-- Moodle iCal parser is minimal (no folding, TZ, recurrence, `VALUE=DATE`).
+- `seedWorkspaceToFirestore` commits in chunks of 450 (Firestore caps a batch at 500 writes); seeding is not atomic across chunks.
+- iCal parser (`src/ical-utils.js`) handles folding, `VALUE=DATE`, and CANCELLED skips; TZID-qualified times and RRULE recurrence are still ignored.
 - Empty-snapshot seeding can double-seed if local state is non-empty before the snapshot lands.
 - Deadline grouping is Manila-time; calendar grid is browser-local.
-- Only `deadlines.js` has tests; no UI tests.
+- Unit tests cover `deadlines`, `auth`, `ical-utils`, `server-security` (node:test); no UI tests.
 
 ---
 
